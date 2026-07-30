@@ -1,0 +1,8 @@
+tmp
+dist
+node_modules
+.env
+uploads/
+.vscode/
+*.log
+.DS_Store

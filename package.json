@@ -1,0 +1,51 @@
+{
+	"name": "nipun-gujarat-backend",
+	"version": "1.0.0",
+	"description": "Nipun Gujarat Student Observation & Review Portal API",
+	"license": "ISC",
+	"author": "",
+	"type": "commonjs",
+	"main": "dist/server.js",
+	"scripts": {
+		"start": "node dist/server.js",
+		"build": "npx -p typescript tsc",
+		"dev": "concurrently \"npx tsc --watch\" \"nodemon -q dist/server.js\"",
+		"lint": "eslint src/**/*.ts",
+		"lint:fix": "eslint src/**/*.ts --fix",
+		"format": "prettier --write src/**/*.ts",
+		"format:check": "prettier --check src/**/*.ts",
+		"db:migrate": "sequelize-cli db:migrate",
+		"db:migrate:undo": "sequelize-cli db:migrate:undo",
+		"db:migrate:status": "sequelize-cli db:migrate:status"
+	},
+	"dependencies": {
+		"axios": "^1.17.0",
+		"cors": "^2.8.5",
+		"dotenv": "^17.2.3",
+		"express": "^5.2.1",
+		"helmet": "^8.1.0",
+		"i18next": "^25.7.3",
+		"i18next-http-middleware": "^3.9.2",
+		"jsonwebtoken": "^9.0.3",
+		"pg": "^8.21.0",
+		"pg-hstore": "^2.3.4",
+		"reflect-metadata": "^0.2.2",
+		"sequelize": "^6.37.8",
+		"sequelize-cli": "^6.6.5",
+		"sequelize-typescript": "^2.1.6",
+		"winston": "^3.19.0",
+		"zod": "^4.3.5"
+	},
+	"devDependencies": {
+		"@types/cors": "^2.8.19",
+		"@types/express": "^5.0.6",
+		"@types/jsonwebtoken": "^9.0.10",
+		"@types/node": "^25.0.3",
+		"@types/pg": "^8.20.0",
+		"concurrently": "^9.2.1",
+		"nodemon": "^3.1.11",
+		"prettier": "^3.7.4",
+		"ts-node": "^10.9.2",
+		"typescript": "^5.9.3"
+	}
+}

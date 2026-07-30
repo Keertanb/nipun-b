@@ -1,0 +1,41 @@
+{
+	"common": {
+		"success": "સફળતા",
+		"badRequest": "ખોટી વિનંતી",
+		"unauthorized": "અનધિકૃત",
+		"forbidden": "પ્રતિબંધિત",
+		"notFound": "વિનંતી કરેલ સંસાધન મળ્યું નથી!",
+		"notAllowed": "પદ્ધતિ માન્ય નથી!",
+		"conflict": "આપેલ માહિતી પહેલેથી અસ્તિત્વમાં છે!",
+		"preconditionFailed": "કૃપા કરીને પહેલા અન્ય પગલાં પૂર્ણ કરો",
+		"validationError": "માન્યતા ભૂલ!",
+		"createdSuccessfully": "સફળતાપૂર્વક બનાવ્યું",
+		"internalServerError": "આંતરિક સર્વર ભૂલ!"
+	},
+	"auth": {
+		"teacherNotFound": "શિક્ષક મળ્યા નથી",
+		"teacherNotActive": "શિક્ષક એકાઉન્ટ સક્રિય નથી",
+		"schoolNotFound": "શાળા મળી નથી",
+		"schoolNotActive": "શાળા સક્રિય નથી",
+		"sessionCreationFailed": "સત્ર બનાવવામાં નિષ્ફળ",
+		"loginSuccessful": "લૉગિન સફળ",
+		"loginFailed": "લૉગિન નિષ્ફળ",
+		"logoutSuccessful": "લૉગઆઉટ સફળ",
+		"logoutFailed": "લૉગઆઉટ નિષ્ફળ",
+		"tokenRequired": "ટોકન જરૂરી છે",
+		"roleIdRequired": "રોલ આઈડી જરૂરી છે",
+		"userIdRequired": "યુઝર આઈડી જરૂરી છે",
+		"sessionExpired": "સત્ર સમાપ્ત થયું, કૃપા કરીને ફરીથી લૉગિન કરો",
+		"registryNotConfigured": "રજિસ્ટ્રી API ગોઠવાયેલ નથી"
+	},
+	"teacher": {
+		"profileFetchedSuccessfully": "પ્રોફાઇલ સફળતાપૂર્વક મેળવી",
+		"studentsFetchedSuccessfully": "વિદ્યાર્થીઓ સફળતાપૂર્વક મેળવ્યા"
+	},
+	"review": {
+		"fetchedSuccessfully": "સમીક્ષા સફળતાપૂર્વક મેળવી",
+		"savedSuccessfully": "સમીક્ષા સફળતાપૂર્વક સાચવી",
+		"saveFailed": "સમીક્ષા સાચવવામાં નિષ્ફળ",
+		"studentNotInSchool": "આ વિદ્યાર્થી તમારી શાળાનો નથી"
+	}
+}

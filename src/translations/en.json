@@ -1,0 +1,41 @@
+{
+	"common": {
+		"success": "Success",
+		"badRequest": "Bad Request",
+		"unauthorized": "Unauthorized",
+		"forbidden": "Forbidden",
+		"notFound": "Requested resource not found!",
+		"notAllowed": "Method is not allowed!",
+		"conflict": "Provided information already exist!",
+		"preconditionFailed": "Please complete other steps first",
+		"validationError": "Validation error!",
+		"createdSuccessfully": "Created Successfully",
+		"internalServerError": "Internal Server Error!"
+	},
+	"auth": {
+		"teacherNotFound": "Teacher not found",
+		"teacherNotActive": "Teacher account is not active",
+		"schoolNotFound": "School not found",
+		"schoolNotActive": "School is not active",
+		"sessionCreationFailed": "Session creation failed",
+		"loginSuccessful": "Login successful",
+		"loginFailed": "Login failed",
+		"logoutSuccessful": "Logout successful",
+		"logoutFailed": "Logout failed",
+		"tokenRequired": "Token is required",
+		"roleIdRequired": "Role ID is required",
+		"userIdRequired": "User ID is required",
+		"sessionExpired": "Session expired, please log in again",
+		"registryNotConfigured": "Registry API is not configured"
+	},
+	"teacher": {
+		"profileFetchedSuccessfully": "Profile fetched successfully",
+		"studentsFetchedSuccessfully": "Students fetched successfully"
+	},
+	"review": {
+		"fetchedSuccessfully": "Review fetched successfully",
+		"savedSuccessfully": "Review saved successfully",
+		"saveFailed": "Failed to save review",
+		"studentNotInSchool": "This student does not belong to your school"
+	}
+}
