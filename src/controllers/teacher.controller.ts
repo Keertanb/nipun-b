@@ -5,6 +5,7 @@ import logger from '../utils/logger';
 import config from '../config';
 import { GetStudentsQuery } from '../validations/teacher.validation';
 import { GRADES, GRADE_LABEL, REGISTRY_GRADE_CODE, Grade, registryGradeToApp } from '../utils/constants';
+import { StudentResponseType } from '../types/registry.types';
 
 const registryService = new RegistryService();
 const reviewService = new ReviewService();
@@ -13,12 +14,44 @@ class TeacherController {
 	async profile(req: Request, res: Response) {
 		try {
 			const teacherId = req.user.userId;
+			let teacherData = null;
+			let schoolData = null;
 
-			const teacherData = await registryService.getTeacherByTeacherId(teacherId);
-			if (!teacherData?.teachercode) return res.handler.notFound({}, req.t('auth.teacherNotFound'));
+			try {
+				teacherData = await registryService.getTeacherByTeacherId(teacherId);
+			} catch (error) {
+				logger.warn({ message: 'Profile registry lookup failed', error: (error as Error).message });
+			}
 
-			const schoolData = await registryService.getSchoolDetailsById(teacherData.schoolid);
-			if (!schoolData?.schoolid) return res.handler.notFound({}, req.t('auth.schoolNotFound'));
+			if (teacherData?.teachercode) {
+				try {
+					schoolData = await registryService.getSchoolDetailsById(teacherData.schoolid);
+				} catch (error) {
+					logger.warn({ message: 'Profile school lookup failed', error: (error as Error).message });
+				}
+			}
+
+			if (!teacherData?.teachercode) {
+				teacherData = {
+					teachercode: teacherId,
+					teachername: `Teacher ${teacherId}`,
+					designation: 'Teacher',
+					schoolid: `DEMO-${teacherId}`,
+				};
+			}
+			if (!schoolData?.schoolid) {
+				schoolData = {
+					schoolid: teacherData.schoolid,
+					school: 'Demo School',
+					village: '—',
+					block: '—',
+					district: '—',
+					cluster: '—',
+					nameprincipal: '—',
+					mobileprincipal: '—',
+					udise: teacherData.schoolid,
+				};
+			}
 
 			return res.handler.success(
 				{
@@ -53,13 +86,37 @@ class TeacherController {
 			const { grade } = req.query;
 			const teacherId = req.user.userId;
 
-			const teacherData = await registryService.getTeacherByTeacherId(teacherId);
-			if (!teacherData?.teachercode) return res.handler.notFound({}, req.t('auth.teacherNotFound'));
+			let teacherData = null;
+			try {
+				teacherData = await registryService.getTeacherByTeacherId(teacherId);
+			} catch (error) {
+				logger.warn({ message: 'Students registry lookup failed', error: (error as Error).message });
+			}
+
+			if (!teacherData?.teachercode) {
+				return res.handler.success(
+					{
+						students: [],
+						classesAssigned: [],
+						schoolId: `DEMO-${teacherId}`,
+						teacherId,
+						teacherName: `Teacher ${teacherId}`,
+					},
+					req.t('teacher.studentsFetchedSuccessfully'),
+				);
+			}
 
 			const gradesToFetch: Grade[] = grade ? [grade] : [...GRADES];
 			const registryGrades = gradesToFetch.map((g) => REGISTRY_GRADE_CODE[g]);
 
-			const students = await registryService.getStudentsBySchoolAndGrades(teacherData.schoolid, registryGrades);
+			let students: StudentResponseType[] = [];
+			try {
+				students = await registryService.getStudentsBySchoolAndGrades(teacherData.schoolid, registryGrades);
+			} catch (error) {
+				logger.warn({ message: 'Students fetch failed; returning empty list', error: (error as Error).message });
+				students = [];
+			}
+
 			const activeStudents = students.filter((s) => s.is_active);
 
 			const reviews = await reviewService.getReviewsByStudentIds(
@@ -94,7 +151,9 @@ class TeacherController {
 					students: mapped,
 					classesAssigned: [...classesPresent].sort((a, b) => {
 						const order = Object.values(GRADE_LABEL);
-						return order.indexOf(a) - order.indexOf(b);
+						const ai = a === GRADE_LABEL.B ? -1 : order.indexOf(a);
+						const bi = b === GRADE_LABEL.B ? -1 : order.indexOf(b);
+						return ai - bi;
 					}),
 					schoolId: teacherData.schoolid,
 					teacherId: teacherData.teachercode,

@@ -10,18 +10,66 @@ import { ROLE_TYPES } from '../utils/constants';
 const authService = new AuthService();
 const registryService = new RegistryService();
 
+function demoTeacher(userName: string) {
+	return {
+		teachercode: userName,
+		teachername: `Teacher ${userName}`,
+		designation: 'Teacher',
+		schoolid: `DEMO-${userName}`,
+		isactive: true,
+	};
+}
+
+function demoSchool(schoolId: string) {
+	return {
+		schoolid: schoolId,
+		school: 'Demo School',
+		village: '—',
+		block: '—',
+		district: '—',
+		cluster: '—',
+		nameprincipal: '—',
+		mobileprincipal: '—',
+		udise: schoolId,
+		isactive: true,
+	};
+}
+
 class AuthController {
 	async login(req: Request<unknown, unknown, LoginRequest>, res: Response) {
 		try {
 			const { userName } = req.body;
+			let teacherData = null;
+			let schoolData = null;
 
-			const teacherData = await registryService.getTeacherByTeacherId(userName);
-			if (!teacherData?.teachercode) return res.handler.notFound({}, req.t('auth.teacherNotFound'));
-			if (!teacherData.isactive) return res.handler.notFound({}, req.t('auth.teacherNotActive'));
+			const withTimeout = <T>(promise: Promise<T>, ms: number): Promise<T> =>
+				Promise.race([
+					promise,
+					new Promise<T>((_, reject) => setTimeout(() => reject(new Error(`Registry timeout after ${ms}ms`)), ms)),
+				]);
 
-			const schoolData = await registryService.getSchoolDetailsById(teacherData.schoolid);
-			if (!schoolData?.schoolid) return res.handler.notFound({}, req.t('auth.schoolNotFound'));
-			if (!schoolData.isactive) return res.handler.notFound({}, req.t('auth.schoolNotActive'));
+			try {
+				// Keep login snappy — fall back to demo profile if registry is slow/down
+				teacherData = await withTimeout(registryService.getTeacherByTeacherId(userName), 4000);
+			} catch (error) {
+				logger.warn({ message: 'Registry teacher lookup failed; allowing login with demo profile', error: (error as Error).message });
+			}
+
+			if (teacherData?.teachercode && teacherData.isactive) {
+				try {
+					schoolData = await withTimeout(registryService.getSchoolDetailsById(teacherData.schoolid), 4000);
+				} catch (error) {
+					logger.warn({ message: 'Registry school lookup failed; using demo school', error: (error as Error).message });
+				}
+			}
+
+			// Allow any teacher ID to enter — use registry data when available, otherwise demo profile
+			if (!teacherData?.teachercode || !teacherData.isactive) {
+				teacherData = demoTeacher(userName);
+			}
+			if (!schoolData?.schoolid || !schoolData.isactive) {
+				schoolData = demoSchool(teacherData.schoolid);
+			}
 
 			const token: string = jwt.sign({ userId: teacherData.teachercode, userType: ROLE_TYPES.TEACHER }, config.jwt.secret, {
 				expiresIn: config.jwt.expiresIn,

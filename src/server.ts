@@ -19,8 +19,28 @@ const server = http.createServer(app);
 if (config.server.nodeEnv === 'production') app.set('trust proxy', true);
 
 app.use(requestIdMiddleware);
-app.use(helmet());
-app.use(cors({ origin: config.server.corsOrigin === '*' ? true : config.server.corsOrigin.split(',').map((o) => o.trim()) }));
+app.use(
+	helmet({
+		crossOriginResourcePolicy: { policy: 'cross-origin' },
+		crossOriginEmbedderPolicy: false,
+	}),
+);
+
+// Reflect any Origin — required for Dev Tunnel / localhost frontends
+app.use(
+	cors({
+		origin: true,
+		credentials: true,
+		methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+		allowedHeaders: ['Content-Type', 'Authorization', 'userid', 'roleid', 'Accept-Language', 'x-request-id', 'Accept'],
+		exposedHeaders: ['x-request-id'],
+		optionsSuccessStatus: 204,
+		preflightContinue: false,
+	}),
+);
+// Ensure preflight never falls through
+app.options(/.*/, cors());
+
 app.use(express.json({ limit: '5mb' }));
 app.use(express.urlencoded({ extended: false }));
 

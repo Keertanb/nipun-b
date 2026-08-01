@@ -2,10 +2,7 @@ import { z } from 'zod';
 
 export const login = {
 	body: z.object({
-		userName: z
-			.string()
-			.trim()
-			.regex(/^\d{8}$/, 'userName must be an 8-digit teacher code'),
+		userName: z.string().trim().min(1, 'Teacher ID is required').max(50),
 	}),
 };
 
