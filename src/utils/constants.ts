@@ -38,3 +38,9 @@ export const registryGradeToApp = (grade: number | string): Grade | null => {
 
 export const REVIEW_RATINGS = ['Good', 'Average', 'Bad'] as const;
 export type ReviewRating = (typeof REVIEW_RATINGS)[number];
+
+export const REVIEW_SUBJECTS = ['Gujarati', 'Maths'] as const;
+export type ReviewSubject = (typeof REVIEW_SUBJECTS)[number];
+
+export const isReviewSubject = (value: string): value is ReviewSubject =>
+	(REVIEW_SUBJECTS as readonly string[]).includes(value);

@@ -36,6 +36,7 @@
 		"fetchedSuccessfully": "સમીક્ષા સફળતાપૂર્વક મેળવી",
 		"savedSuccessfully": "સમીક્ષા સફળતાપૂર્વક સાચવી",
 		"saveFailed": "સમીક્ષા સાચવવામાં નિષ્ફળ",
-		"studentNotInSchool": "આ વિદ્યાર્થી તમારી શાળાનો નથી"
+		"studentNotInSchool": "આ વિદ્યાર્થી તમારી શાળાનો નથી",
+		"roundSubmissionOver": "આ રાઉન્ડની સમીક્ષા સબમિશન સમાપ્ત થઈ ગઈ છે"
 	}
 }

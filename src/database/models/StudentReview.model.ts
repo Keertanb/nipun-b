@@ -23,6 +23,14 @@ export class StudentReview extends Model {
 	@Column({ field: 'academic_year', type: DataType.STRING(10) })
 	academicYear!: string;
 
+	@AllowNull(false)
+	@Column({ field: 'round_id', type: DataType.BIGINT })
+	roundId!: number;
+
+	@AllowNull(false)
+	@Column({ type: DataType.ENUM('Gujarati', 'Maths') })
+	subject!: 'Gujarati' | 'Maths';
+
 	@AllowNull(true)
 	@Column({ type: DataType.STRING(10) })
 	grade!: string | null;

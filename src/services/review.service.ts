@@ -13,22 +13,34 @@ class ReviewService {
 		}
 	}
 
-	async getReview(studentId: string, academicYear: string) {
+	async upsertSubjectReviews(inputs: UpsertReviewInput[]) {
+		const saved = [];
+		for (const input of inputs) {
+			saved.push(await this.upsertReview(input));
+		}
+		return saved;
+	}
+
+	async getReviewsForStudent(studentId: string, academicYear: string, roundId: number) {
 		try {
-			return await reviewModel.getReview(studentId, academicYear);
+			return await reviewModel.getReviewsForStudent(studentId, academicYear, roundId);
 		} catch (error) {
-			logger.error({ message: 'Error in getReview service:', error: (error as Error).message });
+			logger.error({ message: 'Error in getReviewsForStudent service:', error: (error as Error).message });
 			throw error;
 		}
 	}
 
-	async getReviewsByStudentIds(studentIds: string[], academicYear: string) {
+	async getReviewsByStudentIds(studentIds: string[], academicYear: string, roundId: number) {
 		try {
-			return await reviewModel.getReviewsByStudentIds(studentIds, academicYear);
+			return await reviewModel.getReviewsByStudentIds(studentIds, academicYear, roundId);
 		} catch (error) {
 			logger.error({ message: 'Error in getReviewsByStudentIds service:', error: (error as Error).message });
 			throw error;
 		}
+	}
+
+	groupByStudent(rows: Awaited<ReturnType<ReviewModel['getReviewsByStudentIds']>>) {
+		return reviewModel.groupByStudent(rows);
 	}
 }
 

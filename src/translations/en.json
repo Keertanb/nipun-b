@@ -36,6 +36,7 @@
 		"fetchedSuccessfully": "Review fetched successfully",
 		"savedSuccessfully": "Review saved successfully",
 		"saveFailed": "Failed to save review",
-		"studentNotInSchool": "This student does not belong to your school"
+		"studentNotInSchool": "This student does not belong to your school",
+		"roundSubmissionOver": "This round's review submission is over"
 	}
 }

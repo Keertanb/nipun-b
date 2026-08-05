@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import RegistryService from '../services/registry.service';
 import ReviewService from '../services/review.service';
+import RoundService from '../services/round.service';
 import logger from '../utils/logger';
 import config from '../config';
 import { GetStudentsQuery } from '../validations/teacher.validation';
@@ -9,6 +10,7 @@ import { StudentResponseType } from '../types/registry.types';
 
 const registryService = new RegistryService();
 const reviewService = new ReviewService();
+const roundService = new RoundService();
 
 class TeacherController {
 	async profile(req: Request, res: Response) {
@@ -119,11 +121,17 @@ class TeacherController {
 
 			const activeStudents = students.filter((s) => s.is_active);
 
-			const reviews = await reviewService.getReviewsByStudentIds(
-				activeStudents.map((s) => s.studentid),
-				config.academicYear,
-			);
-			const reviewByStudent = new Map(reviews.map((r) => [r.studentId, r]));
+			const current = await roundService.getCurrentRoundForReviews(config.academicYear);
+			const roundId = current.round ? Number(current.round.id) : 0;
+
+			const reviews = roundId
+				? await reviewService.getReviewsByStudentIds(
+						activeStudents.map((s) => s.studentid),
+						config.academicYear,
+						roundId,
+					)
+				: [];
+			const reviewByStudent = reviewService.groupByStudent(reviews);
 
 			const classesPresent = new Set<string>();
 
@@ -138,11 +146,16 @@ class TeacherController {
 					...s,
 					classLabel,
 					appGrade,
-					status: local ? 'Completed' : 'Pending',
-					review: local?.review ?? null,
-					remarks: local?.remarks ?? '',
-					reviewDate: local?.reviewedAt ?? null,
-					isDone: Boolean(local),
+					status: local?.status || 'Pending',
+					subjects: {
+						Gujarati: local?.subjects.Gujarati || null,
+						Maths: local?.subjects.Maths || null,
+					},
+					review: local?.subjects.Gujarati?.review ?? null,
+					remarks: local?.subjects.Gujarati?.remarks ?? '',
+					reviewDate: local?.reviewDate ?? null,
+					isDone: Boolean(local?.isDone),
+					reviewedByTeacherId: local?.reviewedByTeacherId ?? null,
 				};
 			});
 
@@ -158,6 +171,8 @@ class TeacherController {
 					schoolId: teacherData.schoolid,
 					teacherId: teacherData.teachercode,
 					teacherName: teacherData.teachername,
+					round: current.serialized,
+					canSubmit: current.canSubmit,
 				},
 				req.t('teacher.studentsFetchedSuccessfully'),
 			);

@@ -34,6 +34,11 @@ const envSchema = z.object({
 	REGISTRY_API_AUTHORIZATION: z.string().default(''),
 	REGISTRY_API_CLIENT_ID: z.string().default('cg_services_bots'),
 	REGISTRY_API_ACADEMIC_YEAR: z.string().min(1),
+
+	CTS_URL: z.string().default(''),
+	CTS_API_KEY: z.string().default(''),
+	CTS_CLIENT_KEY: z.string().default(''),
+	CTS_ACADEMIC_YEAR: z.string().default(''),
 });
 
 const parseEnv = () => {
@@ -78,6 +83,12 @@ const config = {
 		authorization: env.REGISTRY_API_AUTHORIZATION,
 		clientId: env.REGISTRY_API_CLIENT_ID,
 		academicYear: env.REGISTRY_API_ACADEMIC_YEAR,
+	},
+	cts: {
+		url: env.CTS_URL,
+		apiKey: env.CTS_API_KEY,
+		clientKey: env.CTS_CLIENT_KEY,
+		academicYear: env.CTS_ACADEMIC_YEAR || env.ACADEMIC_YEAR,
 	},
 };
 
