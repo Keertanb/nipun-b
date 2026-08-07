@@ -17,6 +17,8 @@ export type TeacherResponseType = {
 	teachername: string;
 	designation: string;
 	isactive: boolean;
+	/** Some registry payloads use camelCase */
+	isActive?: boolean | string | number;
 };
 
 export type StudentResponseType = {

@@ -1,14 +1,20 @@
 import { z } from 'zod';
 
+/** Matches survey backend: grant_token (uuid) + expires_at when SSO is used. */
+const ssoDetailsSchema = z
+	.object({
+		grant_token: z.string().uuid('SSO grant_token must be a valid UUID'),
+		expires_at: z.number().int('SSO expires_at must be an integer'),
+	})
+	.passthrough();
+
+/** Empty object when SwiftChat SDK is disabled (same as survey frontend else-branch). */
+const emptySsoSchema = z.object({}).strict();
+
 export const login = {
 	body: z.object({
 		teacherCode: z.string().trim().min(1, 'Teacher ID is required').max(50),
-		ssoDetails: z
-			.object({
-				grant_token: z.string().min(1, 'SSO grant_token is required'),
-				expires_at: z.number().optional(),
-			})
-			.passthrough(),
+		ssoDetails: z.union([ssoDetailsSchema, emptySsoSchema]).default({}),
 	}),
 };
 

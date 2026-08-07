@@ -1,42 +1,40 @@
 import jwt from 'jsonwebtoken';
 import config from '../config';
 import AuthModel from '../models/auth.model';
-import { findStaticTeacher, normalizeMobile } from '../data/staticTeachers';
 import { getSwiftChatUserDetails } from '../utils/swiftChat';
+import { normalizeMobile } from '../utils/mobile';
 import logger from '../utils/logger';
 import { ROLE_TYPES } from '../utils/constants';
 import RegistryService from './registry.service';
+import { SchoolDetailsResponseType, TeacherResponseType } from '../types/registry.types';
 
 const authModel = new AuthModel();
 const registryService = new RegistryService();
 
-function demoTeacher(userName: string, mobile?: string) {
-	return {
-		teachercode: userName,
-		teachername: `Teacher ${userName}`,
-		designation: 'Teacher',
-		schoolid: `DEMO-${userName}`,
-		isactive: true,
-		mobile: mobile || '',
-	};
+function httpError(message: string, status: number, code?: string) {
+	const err = new Error(message) as Error & { status: number; code?: string };
+	err.status = status;
+	if (code) err.code = code;
+	return err;
 }
 
-function demoSchool(
-	schoolId: string,
-	extras?: { school?: string; district?: string; block?: string; cluster?: string; village?: string },
-) {
-	return {
-		schoolid: schoolId,
-		school: extras?.school || 'Demo School',
-		village: extras?.village || '—',
-		block: extras?.block || '—',
-		district: extras?.district || '—',
-		cluster: extras?.cluster || extras?.village || '—',
-		nameprincipal: '—',
-		mobileprincipal: '—',
-		udise: schoolId,
-		isactive: true,
-	};
+function isRegistryActive(flag: unknown): boolean {
+	if (flag === true || flag === 1) return true;
+	if (typeof flag === 'string') {
+		const v = flag.trim().toLowerCase();
+		return v === 'true' || v === '1' || v === 'yes' || v === 'y';
+	}
+	return false;
+}
+
+function readRegistryActive(teacher: TeacherResponseType & { isActive?: boolean | string | number }) {
+	if ('isActive' in teacher && teacher.isActive !== undefined && teacher.isActive !== null) {
+		return isRegistryActive(teacher.isActive);
+	}
+	if ('isactive' in teacher && teacher.isactive !== undefined && teacher.isactive !== null) {
+		return isRegistryActive(teacher.isactive);
+	}
+	return false;
 }
 
 class AuthService {
@@ -77,7 +75,10 @@ class AuthService {
 	}
 
 	/**
-	 * Login with teacherId + SSO. Mobile is resolved from SwiftChat via ssoDetails.grant_token.
+	 * Login with teacherCode + ssoDetails (survey-backend pattern).
+	 * - grant_token → Kluster get-user-details → user_id (mobile)
+	 * - Registry must return active teacher (isActive)
+	 * - Persist mobile on teachers table
 	 */
 	async loginWithTeacherSso(input: {
 		teacherCode: string;
@@ -88,112 +89,90 @@ class AuthService {
 		const ssoDetails = input.ssoDetails || {};
 		const grantToken = typeof ssoDetails.grant_token === 'string' ? ssoDetails.grant_token.trim() : '';
 
-		if (!grantToken) {
-			const err = new Error('SSO grant_token is required');
-			(err as Error & { status: number }).status = 400;
-			throw err;
-		}
+		let swiftChatUserDetails: {
+			user_id: string;
+			name?: string;
+			email?: string;
+			email_verified?: boolean;
+		} = { user_id: '', name: '', email: '', email_verified: false };
 
-		let swiftChatUserMobile = '';
-		try {
-			const swiftUser = await getSwiftChatUserDetails(grantToken);
-			swiftChatUserMobile = normalizeMobile(swiftUser.user_id || '');
-		} catch (error) {
-			logger.error({ message: 'SwiftChat user details failed', error: (error as Error).message });
-			const err = new Error('Error while getting SwiftChat user details.');
-			(err as Error & { status: number }).status = 404;
-			throw err;
-		}
-
-		const mobile = swiftChatUserMobile;
-		if (!/^[6-9]\d{9}$/.test(mobile)) {
-			const err = new Error('Could not resolve a valid mobile number from SSO');
-			(err as Error & { status: number }).status = 400;
-			throw err;
-		}
-
-		const staticTeacher = findStaticTeacher(teacherCode);
-		if (staticTeacher && staticTeacher.mobile !== mobile) {
-			const err = new Error('Teacher code and SSO mobile number do not match');
-			(err as Error & { status: number }).status = 404;
-			throw err;
-		}
-
-		if (!staticTeacher) {
-			logger.info({ message: 'Teacher not in static catalog; allowing login with SSO mobile', teacherCode });
-		}
-
-		return this.createTeacherLoginSession({
-			teacherCode,
-			mobile,
-			ipAddress: input.ipAddress,
-			swiftChatUserMobile,
-		});
-	}
-
-	async createTeacherLoginSession(input: {
-		teacherCode: string;
-		mobile?: string;
-		ipAddress: string;
-		swiftChatUserMobile?: string;
-	}) {
-		const { teacherCode, mobile, ipAddress, swiftChatUserMobile = '' } = input;
-		const staticTeacher = findStaticTeacher(teacherCode);
-
-		let teacherData = null;
-		let schoolData = null;
-
-		const withTimeout = <T>(promise: Promise<T>, ms: number): Promise<T> =>
-			Promise.race([
-				promise,
-				new Promise<T>((_, reject) => setTimeout(() => reject(new Error(`Registry timeout after ${ms}ms`)), ms)),
-			]);
-
-		try {
-			teacherData = await withTimeout(registryService.getTeacherByTeacherId(teacherCode), 4000);
-		} catch (error) {
-			logger.warn({ message: 'Registry teacher lookup failed', error: (error as Error).message });
-		}
-
-		if (teacherData?.teachercode && teacherData.isactive) {
+		if (grantToken) {
 			try {
-				schoolData = await withTimeout(registryService.getSchoolDetailsById(teacherData.schoolid), 4000);
+				swiftChatUserDetails = await getSwiftChatUserDetails(grantToken);
 			} catch (error) {
-				logger.warn({ message: 'Registry school lookup failed', error: (error as Error).message });
-			}
-		}
-
-		if (!teacherData?.teachercode || !teacherData.isactive) {
-			if (staticTeacher) {
-				teacherData = {
-					teachercode: staticTeacher.teacherCode,
-					teachername: staticTeacher.teacherName,
-					designation: 'Teacher',
-					schoolid: staticTeacher.schoolId,
-					isactive: true,
-				};
-				schoolData = demoSchool(staticTeacher.schoolId, {
-					school: staticTeacher.schoolName,
-					district: staticTeacher.district,
-					block: staticTeacher.block,
-					cluster: staticTeacher.cluster,
-					village: staticTeacher.village,
+				logger.error({
+					message: 'Error while getting user details',
+					error,
+					ssoDetails,
 				});
-			} else {
-				teacherData = demoTeacher(teacherCode, mobile);
+				throw httpError('Error while getting user details.', 404, 'SWIFTCHAT_FAILED');
 			}
+		} else if (config.environment === 'production') {
+			throw httpError('SSO grant_token is required', 400, 'SSO_REQUIRED');
 		}
 
-		if (!schoolData?.schoolid || !schoolData.isactive) {
-			schoolData = demoSchool(teacherData.schoolid);
+		const swiftChatUserMobile = normalizeMobile(swiftChatUserDetails.user_id || '');
+		const mobile = swiftChatUserMobile;
+
+		if (grantToken && !mobile) {
+			throw httpError('Could not resolve mobile number from SSO user_id', 400, 'SSO_MOBILE_MISSING');
 		}
 
+		let teacherData: (TeacherResponseType & { isActive?: boolean | string | number }) | null = null;
+		try {
+			teacherData = await registryService.getTeacherByTeacherId(teacherCode);
+		} catch (error) {
+			logger.error({ message: 'Registry teacher lookup failed', error: (error as Error).message, teacherCode });
+			throw httpError('Unable to verify teacher with registry', 503, 'REGISTRY_UNAVAILABLE');
+		}
+
+		if (!teacherData?.teachercode) {
+			throw httpError('Teacher not found', 404, 'TEACHER_NOT_FOUND');
+		}
+
+		if (!readRegistryActive(teacherData)) {
+			throw httpError('Teacher account is not active', 403, 'TEACHER_NOT_ACTIVE');
+		}
+
+		let schoolData: SchoolDetailsResponseType | null = null;
+		try {
+			schoolData = await registryService.getSchoolDetailsById(teacherData.schoolid);
+		} catch (error) {
+			logger.warn({ message: 'Registry school lookup failed', error: (error as Error).message });
+		}
+
+		if (!schoolData?.schoolid) {
+			throw httpError('School not found for teacher', 404, 'SCHOOL_NOT_FOUND');
+		}
+
+		if (
+			!isRegistryActive(
+				(schoolData as SchoolDetailsResponseType & { isActive?: unknown }).isActive ?? schoolData.isactive,
+			)
+		) {
+			throw httpError('School is not active', 403, 'SCHOOL_NOT_ACTIVE');
+		}
+
+		if (mobile) {
+			await authModel.upsertTeacher({
+				teacherCode: teacherData.teachercode,
+				mobile,
+				teacherName: teacherData.teachername,
+				designation: teacherData.designation,
+				schoolId: teacherData.schoolid,
+			});
+		}
+
+		const now = Date.now();
 		const token: string = jwt.sign(
 			{
 				userId: teacherData.teachercode,
 				userType: ROLE_TYPES.TEACHER,
-				mobile: mobile || '',
+				teacherCode: teacherData.teachercode,
+				schoolCode: teacherData.schoolid,
+				userMobile: mobile,
 				swiftChatUserMobile,
+				dateTime: now,
 			},
 			config.jwt.secret,
 			{ expiresIn: config.jwt.expiresIn },
@@ -204,15 +183,13 @@ class AuthService {
 		const session = await this.createUserSession(
 			teacherData.teachercode,
 			token,
-			ipAddress,
+			input.ipAddress,
 			teacherData.schoolid,
 			ROLE_TYPES.TEACHER,
 		);
 
 		if (!session?.sessionId) {
-			const err = new Error('Session creation failed');
-			(err as Error & { status: number }).status = 500;
-			throw err;
+			throw httpError('Session creation failed', 500, 'SESSION_FAILED');
 		}
 
 		return {
@@ -226,7 +203,7 @@ class AuthService {
 				teachername: teacherData.teachername,
 				designation: teacherData.designation,
 				schoolid: teacherData.schoolid,
-				mobile: mobile || '',
+				mobile,
 			},
 			school: {
 				schoolid: schoolData.schoolid,

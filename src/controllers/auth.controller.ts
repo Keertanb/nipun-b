@@ -4,6 +4,15 @@ import { LoginRequest } from '../validations/auth.validation';
 
 const authService = new AuthService();
 
+const AUTH_ERROR_KEYS: Record<string, string> = {
+	TEACHER_NOT_FOUND: 'auth.teacherNotFound',
+	TEACHER_NOT_ACTIVE: 'auth.teacherNotActive',
+	SCHOOL_NOT_FOUND: 'auth.schoolNotFound',
+	SCHOOL_NOT_ACTIVE: 'auth.schoolNotActive',
+	SESSION_FAILED: 'auth.sessionCreationFailed',
+	REGISTRY_UNAVAILABLE: 'auth.registryNotConfigured',
+};
+
 class AuthController {
 	async login(req: Request<unknown, unknown, LoginRequest>, res: Response, next: NextFunction) {
 		try {
@@ -15,7 +24,10 @@ class AuthController {
 			});
 			return res.handler.success(data, req.t('auth.loginSuccessful'));
 		} catch (error) {
-			return next(error);
+			const err = error as Error & { status?: number; code?: string };
+			const key = err.code ? AUTH_ERROR_KEYS[err.code] : undefined;
+			if (key) err.message = req.t(key);
+			return next(err);
 		}
 	}
 
