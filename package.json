@@ -9,6 +9,7 @@
 	"scripts": {
 		"start": "node dist/server.js",
 		"build": "npx -p typescript tsc",
+		"postinstall": "npm run build",
 		"dev": "concurrently \"npx tsc --watch\" \"nodemon -q dist/server.js\"",
 		"lint": "eslint src/**/*.ts",
 		"lint:fix": "eslint src/**/*.ts --fix",
