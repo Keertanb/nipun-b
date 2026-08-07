@@ -2,15 +2,54 @@ import { Request, Response } from 'express';
 import RegistryService from '../services/registry.service';
 import ReviewService from '../services/review.service';
 import RoundService from '../services/round.service';
+import StageService from '../services/stage.service';
 import logger from '../utils/logger';
 import config from '../config';
 import { GetStudentsQuery } from '../validations/teacher.validation';
-import { GRADES, GRADE_LABEL, REGISTRY_GRADE_CODE, Grade, registryGradeToApp } from '../utils/constants';
+import { SaveInterventionBody, TeacherCreateQuestionBody } from '../validations/stage.validation';
+import { GRADES, GRADE_LABEL, REGISTRY_GRADE_CODE, registryGradeToApp } from '../utils/constants';
 import { StudentResponseType } from '../types/registry.types';
 
 const registryService = new RegistryService();
 const reviewService = new ReviewService();
 const roundService = new RoundService();
+const stageService = new StageService();
+
+async function resolveTeacherSchoolStudents(teacherId: string) {
+	let teacherData = null;
+	try {
+		teacherData = await registryService.getTeacherByTeacherId(teacherId);
+	} catch (error) {
+		logger.warn({ message: 'Teacher registry lookup failed', error: (error as Error).message });
+	}
+
+	if (!teacherData?.teachercode) {
+		return {
+			teacherData: {
+				teachercode: teacherId,
+				teachername: `Teacher ${teacherId}`,
+				schoolid: `DEMO-${teacherId}`,
+			},
+			students: [] as StudentResponseType[],
+		};
+	}
+
+	let students: StudentResponseType[] = [];
+	try {
+		students = await registryService.getStudentsBySchoolAndGrades(
+			teacherData.schoolid,
+			GRADES.map((g) => REGISTRY_GRADE_CODE[g]),
+		);
+	} catch (error) {
+		logger.warn({ message: 'Students fetch failed', error: (error as Error).message });
+		students = [];
+	}
+
+	return {
+		teacherData,
+		students: students.filter((s) => s.is_active),
+	};
+}
 
 class TeacherController {
 	async profile(req: Request, res: Response) {
@@ -88,54 +127,33 @@ class TeacherController {
 			const { grade } = req.query;
 			const teacherId = req.user.userId;
 
-			let teacherData = null;
-			try {
-				teacherData = await registryService.getTeacherByTeacherId(teacherId);
-			} catch (error) {
-				logger.warn({ message: 'Students registry lookup failed', error: (error as Error).message });
-			}
-
-			if (!teacherData?.teachercode) {
-				return res.handler.success(
-					{
-						students: [],
-						classesAssigned: [],
-						schoolId: `DEMO-${teacherId}`,
-						teacherId,
-						teacherName: `Teacher ${teacherId}`,
-					},
-					req.t('teacher.studentsFetchedSuccessfully'),
-				);
-			}
-
-			const gradesToFetch: Grade[] = grade ? [grade] : [...GRADES];
-			const registryGrades = gradesToFetch.map((g) => REGISTRY_GRADE_CODE[g]);
-
-			let students: StudentResponseType[] = [];
-			try {
-				students = await registryService.getStudentsBySchoolAndGrades(teacherData.schoolid, registryGrades);
-			} catch (error) {
-				logger.warn({ message: 'Students fetch failed; returning empty list', error: (error as Error).message });
-				students = [];
-			}
-
-			const activeStudents = students.filter((s) => s.is_active);
+			const { teacherData, students } = await resolveTeacherSchoolStudents(teacherId);
+			const filtered = grade
+				? students.filter((s) => registryGradeToApp(s.grade) === grade)
+				: students;
 
 			const current = await roundService.getCurrentRoundForReviews(config.academicYear);
 			const roundId = current.round ? Number(current.round.id) : 0;
 
-			const reviews = roundId
-				? await reviewService.getReviewsByStudentIds(
-						activeStudents.map((s) => s.studentid),
-						config.academicYear,
-						roundId,
-					)
-				: [];
+			let activeStage = null;
+			if (roundId) {
+				activeStage = await stageService.getActiveStageForTeacher(roundId, teacherId, teacherData.schoolid);
+			}
+
+			const reviews =
+				roundId && activeStage
+					? await reviewService.getReviewsByStudentIds(
+							filtered.map((s) => s.studentid),
+							config.academicYear,
+							roundId,
+							activeStage.id,
+						)
+					: [];
 			const reviewByStudent = reviewService.groupByStudent(reviews);
 
 			const classesPresent = new Set<string>();
 
-			const mapped = activeStudents.map((s) => {
+			const mapped = filtered.map((s) => {
 				const appGrade = registryGradeToApp(s.grade);
 				const classLabel = appGrade ? GRADE_LABEL[appGrade] : `Grade ${s.grade}`;
 				if (appGrade) classesPresent.add(GRADE_LABEL[appGrade]);
@@ -173,12 +191,125 @@ class TeacherController {
 					teacherName: teacherData.teachername,
 					round: current.serialized,
 					canSubmit: current.canSubmit,
+					stage: activeStage,
 				},
 				req.t('teacher.studentsFetchedSuccessfully'),
 			);
 		} catch (error) {
 			logger.error({ message: 'Get students error:', error: (error as Error).message });
 			return res.handler.serverError({}, (error as Error).message || req.t('auth.loginFailed'));
+		}
+	}
+
+	async stageWorkspace(req: Request, res: Response) {
+		try {
+			const teacherId = req.user.userId;
+			const { teacherData, students } = await resolveTeacherSchoolStudents(teacherId);
+			const current = await roundService.getCurrentRoundForReviews(config.academicYear);
+			if (!current.round) {
+				return res.handler.success({
+					round: null,
+					canSubmit: false,
+					stages: [],
+					activeStage: null,
+				});
+			}
+
+			const workspace = await stageService.getTeacherWorkspace({
+				roundId: Number(current.round.id),
+				teacherId,
+				schoolId: teacherData.schoolid,
+				studentIds: students.map((s) => s.studentid),
+				academicYear: config.academicYear,
+			});
+
+			return res.handler.success({
+				round: current.serialized,
+				canSubmit: current.canSubmit,
+				...workspace,
+			});
+		} catch (error) {
+			logger.error({ message: 'Stage workspace error', error: (error as Error).message });
+			return res.handler.serverError({}, (error as Error).message || 'Failed to load stage workspace');
+		}
+	}
+
+	async completeStage(req: Request, res: Response) {
+		try {
+			const teacherId = req.user.userId;
+			const stageId = Number(req.params.stageId);
+			if (!Number.isFinite(stageId)) return res.handler.badRequest({}, 'Invalid stageId');
+
+			const { teacherData, students } = await resolveTeacherSchoolStudents(teacherId);
+			const current = await roundService.getCurrentRoundForReviews(config.academicYear);
+			if (!current.canSubmit || !current.round) {
+				return res.handler.preconditionFailed({}, req.t('review.roundSubmissionOver'));
+			}
+
+			const workspace = await stageService.completeTeacherStage({
+				roundId: Number(current.round.id),
+				stageId,
+				teacherId,
+				schoolId: teacherData.schoolid,
+				studentIds: students.map((s) => s.studentid),
+				academicYear: config.academicYear,
+			});
+
+			return res.handler.success({
+				round: current.serialized,
+				canSubmit: current.canSubmit,
+				...workspace,
+			});
+		} catch (error) {
+			logger.error({ message: 'Complete stage error', error: (error as Error).message });
+			const msg = (error as Error).message || 'Failed to complete stage';
+			if (msg.includes('not complete') || msg.includes('active stage') || msg.includes('locked')) {
+				return res.handler.badRequest({}, msg);
+			}
+			return res.handler.serverError({}, msg);
+		}
+	}
+
+	async addStageQuestion(req: Request<{ stageId: string }, unknown, TeacherCreateQuestionBody>, res: Response) {
+		try {
+			const teacherId = req.user.userId;
+			const stageId = Number(req.params.stageId);
+			if (!Number.isFinite(stageId)) return res.handler.badRequest({}, 'Invalid stageId');
+
+			const question = await stageService.addQuestion(stageId, {
+				prompt: req.body.prompt,
+				subject: req.body.subject,
+				createdByTeacherId: teacherId,
+			});
+			return res.handler.created(question, 'Question added');
+		} catch (error) {
+			logger.error({ message: 'Teacher add question error', error: (error as Error).message });
+			return res.handler.serverError({}, (error as Error).message || 'Failed to add question');
+		}
+	}
+
+	async saveIntervention(req: Request<{ stageId: string }, unknown, SaveInterventionBody>, res: Response) {
+		try {
+			const teacherId = req.user.userId;
+			const stageId = Number(req.params.stageId);
+			if (!Number.isFinite(stageId)) return res.handler.badRequest({}, 'Invalid stageId');
+
+			const { teacherData } = await resolveTeacherSchoolStudents(teacherId);
+			const saved = await stageService.saveIntervention({
+				stageId,
+				teacherId,
+				schoolId: teacherData.schoolid,
+				studentId: req.body.studentId,
+				subject: req.body.subject,
+				actions: req.body.actions || [],
+				notes: req.body.notes || '',
+			});
+			return res.handler.success(saved);
+		} catch (error) {
+			logger.error({ message: 'Save intervention error', error: (error as Error).message });
+			const msg = (error as Error).message || 'Failed to save intervention';
+			if (msg.includes('only be saved')) return res.handler.badRequest({}, msg);
+			return res.handler.serverError({}, msg);
 		}
 	}
 }

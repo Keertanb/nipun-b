@@ -21,18 +21,23 @@ class ReviewService {
 		return saved;
 	}
 
-	async getReviewsForStudent(studentId: string, academicYear: string, roundId: number) {
+	async getReviewsForStudent(studentId: string, academicYear: string, roundId: number, stageId?: number | null) {
 		try {
-			return await reviewModel.getReviewsForStudent(studentId, academicYear, roundId);
+			return await reviewModel.getReviewsForStudent(studentId, academicYear, roundId, stageId);
 		} catch (error) {
 			logger.error({ message: 'Error in getReviewsForStudent service:', error: (error as Error).message });
 			throw error;
 		}
 	}
 
-	async getReviewsByStudentIds(studentIds: string[], academicYear: string, roundId: number) {
+	async getReviewsByStudentIds(
+		studentIds: string[],
+		academicYear: string,
+		roundId: number,
+		stageId?: number | null,
+	) {
 		try {
-			return await reviewModel.getReviewsByStudentIds(studentIds, academicYear, roundId);
+			return await reviewModel.getReviewsByStudentIds(studentIds, academicYear, roundId, stageId);
 		} catch (error) {
 			logger.error({ message: 'Error in getReviewsByStudentIds service:', error: (error as Error).message });
 			throw error;

@@ -1,7 +1,9 @@
 import RoundModel, { CreateRoundInput, UpdateRoundInput } from '../models/round.model';
+import StageService from './stage.service';
 import logger from '../utils/logger';
 
 const roundModel = new RoundModel();
+const stageService = new StageService();
 
 class RoundService {
 	async listRounds(academicYear: string) {
@@ -48,6 +50,7 @@ class RoundService {
 				roundNumber: nextNumber,
 				name: input.name || `Round ${nextNumber}`,
 			});
+			await stageService.ensureDefaultStages(Number(created.id));
 			return roundModel.serialize(created);
 		} catch (error) {
 			logger.error({ message: 'Error creating round', error: (error as Error).message });

@@ -2,12 +2,14 @@ import { Request, Response } from 'express';
 import config from '../config';
 import ReviewService from '../services/review.service';
 import RoundService from '../services/round.service';
+import StageService from '../services/stage.service';
 import logger from '../utils/logger';
 import { SubmitReviewBody } from '../validations/review.validation';
 import { registryGradeToApp, REVIEW_SUBJECTS } from '../utils/constants';
 
 const reviewService = new ReviewService();
 const roundService = new RoundService();
+const stageService = new StageService();
 
 class ReviewController {
 	async getReview(req: Request, res: Response) {
@@ -17,7 +19,25 @@ class ReviewController {
 			if (!current.round) {
 				return res.handler.success(null, req.t('review.fetchedSuccessfully'));
 			}
-			const rows = await reviewService.getReviewsForStudent(studentId, config.academicYear, Number(current.round.id));
+
+			const teacherId = req.user?.userId;
+			const schoolId = req.teacherSchoolId;
+			let stageId: number | null = null;
+			if (teacherId && schoolId) {
+				const activeStage = await stageService.getActiveStageForTeacher(
+					Number(current.round.id),
+					teacherId,
+					schoolId,
+				);
+				stageId = activeStage?.id ?? null;
+			}
+
+			const rows = await reviewService.getReviewsForStudent(
+				studentId,
+				config.academicYear,
+				Number(current.round.id),
+				stageId,
+			);
 			const grouped = reviewService.groupByStudent(rows).get(studentId) || null;
 			return res.handler.success(
 				grouped
@@ -26,6 +46,7 @@ class ReviewController {
 							status: grouped.status,
 							subjects: grouped.subjects,
 							reviewDate: grouped.reviewDate,
+							stageId,
 						}
 					: null,
 				req.t('review.fetchedSuccessfully'),
@@ -51,9 +72,19 @@ class ReviewController {
 				return res.handler.preconditionFailed({}, req.t('review.roundSubmissionOver'));
 			}
 
+			const activeStage = await stageService.getActiveStageForTeacher(
+				Number(current.round.id),
+				teacherId,
+				schoolId,
+			);
+			if (!activeStage) {
+				return res.handler.preconditionFailed({}, 'No active stage available for assessment');
+			}
+
 			const appGrade = registryGradeToApp(student.grade);
 			const reviewedAt = new Date().toISOString().slice(0, 10);
 			const roundId = Number(current.round.id);
+			const stageId = activeStage.id;
 
 			await reviewService.upsertSubjectReviews(
 				reviews.map((item) => ({
@@ -62,6 +93,7 @@ class ReviewController {
 					teacherId,
 					academicYear: config.academicYear,
 					roundId,
+					stageId,
 					subject: item.subject,
 					grade: appGrade,
 					review: item.review,
@@ -70,7 +102,7 @@ class ReviewController {
 				})),
 			);
 
-			const rows = await reviewService.getReviewsForStudent(studentId, config.academicYear, roundId);
+			const rows = await reviewService.getReviewsForStudent(studentId, config.academicYear, roundId, stageId);
 			const grouped = reviewService.groupByStudent(rows).get(studentId);
 
 			return res.handler.success(
@@ -81,6 +113,9 @@ class ReviewController {
 					reviewDate: grouped?.reviewDate || reviewedAt,
 					isDone: Boolean(grouped?.isDone),
 					roundId,
+					stageId,
+					stageName: activeStage.name,
+					stageCode: activeStage.code,
 					roundNumber: current.serialized?.roundNumber ?? null,
 					requiredSubjects: [...REVIEW_SUBJECTS],
 				},

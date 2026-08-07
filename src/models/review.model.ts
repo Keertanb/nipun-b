@@ -8,6 +8,7 @@ export type UpsertReviewInput = {
 	teacherId: string;
 	academicYear: string;
 	roundId: number;
+	stageId: number;
 	subject: ReviewSubject;
 	grade?: string | null;
 	review: ReviewRating;
@@ -30,6 +31,7 @@ class ReviewModel {
 				studentId: input.studentId,
 				academicYear: input.academicYear,
 				roundId: input.roundId,
+				stageId: input.stageId,
 				subject: input.subject,
 			},
 		});
@@ -52,6 +54,7 @@ class ReviewModel {
 			teacherId: input.teacherId,
 			academicYear: input.academicYear,
 			roundId: input.roundId,
+			stageId: input.stageId,
 			subject: input.subject,
 			grade: input.grade ?? null,
 			review: input.review,
@@ -60,22 +63,53 @@ class ReviewModel {
 		});
 	}
 
-	async getReviewsForStudent(studentId: string, academicYear: string, roundId: number) {
+	async getReviewsForStudent(studentId: string, academicYear: string, roundId: number, stageId?: number | null) {
 		return StudentReview.findAll({
-			where: { studentId, academicYear, roundId },
-			attributes: ['studentId', 'subject', 'review', 'remarks', 'reviewedAt', 'teacherId', 'grade', 'roundId'],
+			where: {
+				studentId,
+				academicYear,
+				roundId,
+				...(stageId != null ? { stageId } : {}),
+			},
+			attributes: [
+				'studentId',
+				'subject',
+				'review',
+				'remarks',
+				'reviewedAt',
+				'teacherId',
+				'grade',
+				'roundId',
+				'stageId',
+			],
 		});
 	}
 
-	async getReviewsByStudentIds(studentIds: string[], academicYear: string, roundId: number) {
+	async getReviewsByStudentIds(
+		studentIds: string[],
+		academicYear: string,
+		roundId: number,
+		stageId?: number | null,
+	) {
 		if (!studentIds.length || !roundId) return [];
 		return StudentReview.findAll({
 			where: {
 				studentId: { [Op.in]: studentIds },
 				academicYear,
 				roundId,
+				...(stageId != null ? { stageId } : {}),
 			},
-			attributes: ['studentId', 'subject', 'review', 'remarks', 'reviewedAt', 'teacherId', 'grade', 'roundId'],
+			attributes: [
+				'studentId',
+				'subject',
+				'review',
+				'remarks',
+				'reviewedAt',
+				'teacherId',
+				'grade',
+				'roundId',
+				'stageId',
+			],
 		});
 	}
 

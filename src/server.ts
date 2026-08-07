@@ -16,7 +16,44 @@ const port = config.server.port;
 
 const server = http.createServer(app);
 
-if (config.server.nodeEnv === 'production') app.set('trust proxy', true);
+// Needed behind ngrok / tunnels
+app.set('trust proxy', true);
+
+// Open CORS for every endpoint / every origin / every port — must run first
+app.use((req, res, next) => {
+	const origin = req.headers.origin || '*';
+	res.setHeader('Access-Control-Allow-Origin', origin === '*' ? '*' : origin);
+	if (origin !== '*') {
+		res.setHeader('Vary', 'Origin');
+		res.setHeader('Access-Control-Allow-Credentials', 'true');
+	}
+	res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS,HEAD');
+	res.setHeader(
+		'Access-Control-Allow-Headers',
+		req.headers['access-control-request-headers'] ||
+			'Content-Type, Authorization, userid, roleid, Accept-Language, x-request-id, Accept, Origin, X-Requested-With, ngrok-skip-browser-warning',
+	);
+	res.setHeader('Access-Control-Expose-Headers', 'x-request-id');
+	res.setHeader('Access-Control-Max-Age', '86400');
+
+	if (req.method === 'OPTIONS') {
+		return res.sendStatus(204);
+	}
+	return next();
+});
+
+app.options(/.*/, (_req, res) => res.sendStatus(204));
+
+app.use(
+	cors({
+		origin: true,
+		credentials: true,
+		methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'HEAD'],
+		allowedHeaders: '*',
+		exposedHeaders: ['x-request-id'],
+		optionsSuccessStatus: 204,
+	}),
+);
 
 app.use(requestIdMiddleware);
 app.use(
@@ -25,21 +62,6 @@ app.use(
 		crossOriginEmbedderPolicy: false,
 	}),
 );
-
-// Reflect any Origin — required for Dev Tunnel / localhost frontends
-app.use(
-	cors({
-		origin: true,
-		credentials: true,
-		methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-		allowedHeaders: ['Content-Type', 'Authorization', 'userid', 'roleid', 'Accept-Language', 'x-request-id', 'Accept'],
-		exposedHeaders: ['x-request-id'],
-		optionsSuccessStatus: 204,
-		preflightContinue: false,
-	}),
-);
-// Ensure preflight never falls through
-app.options(/.*/, cors());
 
 app.use(express.json({ limit: '5mb' }));
 app.use(express.urlencoded({ extended: false }));
