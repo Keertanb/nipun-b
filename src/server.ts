@@ -10,6 +10,8 @@ import healthRoute from './routes/health.route';
 import { initializeDatabase, closeDatabase } from './database';
 import i18nMiddleware from './middlewares/i18n.middleware';
 import requestIdMiddleware from './middlewares/requestId.middleware';
+import errorHandler from './middlewares/errorHandler.middleware';
+import errorLogger from './middlewares/errorLogger.middleware';
 
 const app = express();
 const port = config.server.port;
@@ -76,6 +78,9 @@ app.use(handlerMiddleware);
 
 app.use('/api/ping', healthRoute);
 app.use('/api/v1', routes);
+
+app.use(errorHandler);
+app.use(errorLogger);
 
 const startServer = async () => {
 	try {

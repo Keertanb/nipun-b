@@ -6,46 +6,77 @@ import StageModel, {
 import ReviewModel from '../models/review.model';
 import { StudentReview } from '../database/models/StudentReview.model';
 import { REVIEW_SUBJECTS, ReviewRating } from '../utils/constants';
+import logger from '../utils/logger';
 
 const stageModel = new StageModel();
 const reviewModel = new ReviewModel();
 
 class StageService {
 	async listStages(roundId: number) {
-		const stages = await stageModel.listByRound(roundId);
-		return stages.map((s) => stageModel.serializeStage(s));
+		try {
+			const stages = await stageModel.listByRound(roundId);
+			return stages.map((s) => stageModel.serializeStage(s));
+		} catch (error) {
+			logger.error({ message: 'Error listing stages', error: (error as Error).message, roundId });
+			throw error;
+		}
 	}
 
 	async ensureDefaultStages(roundId: number) {
-		const stages = await stageModel.seedDefaultStages(roundId);
-		return stages.map((s) => stageModel.serializeStage(s));
+		try {
+			const stages = await stageModel.seedDefaultStages(roundId);
+			return stages.map((s) => stageModel.serializeStage(s));
+		} catch (error) {
+			logger.error({ message: 'Error ensuring default stages', error: (error as Error).message, roundId });
+			throw error;
+		}
 	}
 
 	async createStage(input: CreateStageInput) {
-		const created = await stageModel.createStage(input);
-		return stageModel.serializeStage(created);
+		try {
+			const created = await stageModel.createStage(input);
+			return stageModel.serializeStage(created);
+		} catch (error) {
+			logger.error({ message: 'Error creating stage', error: (error as Error).message, input });
+			throw error;
+		}
 	}
 
 	async updateStage(roundId: number, stageId: number, input: UpdateStageInput) {
-		const stage = await stageModel.getByRoundAndId(roundId, stageId);
-		if (!stage) return null;
-		const updated = await stageModel.updateStage(stageId, input);
-		return updated ? stageModel.serializeStage(updated) : null;
+		try {
+			const stage = await stageModel.getByRoundAndId(roundId, stageId);
+			if (!stage) return null;
+			const updated = await stageModel.updateStage(stageId, input);
+			return updated ? stageModel.serializeStage(updated) : null;
+		} catch (error) {
+			logger.error({ message: 'Error updating stage', error: (error as Error).message, roundId, stageId });
+			throw error;
+		}
 	}
 
 	async deleteStage(roundId: number, stageId: number) {
-		const stage = await stageModel.getByRoundAndId(roundId, stageId);
-		if (!stage) return false;
-		const reviewCount = await StudentReview.count({ where: { stageId } });
-		if (reviewCount > 0) {
-			throw new Error('Cannot delete a stage that already has student assessments');
+		try {
+			const stage = await stageModel.getByRoundAndId(roundId, stageId);
+			if (!stage) return false;
+			const reviewCount = await StudentReview.count({ where: { stageId } });
+			if (reviewCount > 0) {
+				throw new Error('Cannot delete a stage that already has student assessments');
+			}
+			return stageModel.deleteStage(stageId);
+		} catch (error) {
+			logger.error({ message: 'Error deleting stage', error: (error as Error).message, roundId, stageId });
+			throw error;
 		}
-		return stageModel.deleteStage(stageId);
 	}
 
 	async reorderStages(roundId: number, stageIds: number[]) {
-		const stages = await stageModel.reorderStages(roundId, stageIds);
-		return stages.map((s) => stageModel.serializeStage(s));
+		try {
+			const stages = await stageModel.reorderStages(roundId, stageIds);
+			return stages.map((s) => stageModel.serializeStage(s));
+		} catch (error) {
+			logger.error({ message: 'Error reordering stages', error: (error as Error).message, roundId });
+			throw error;
+		}
 	}
 
 	async listQuestions(stageId: number) {
@@ -149,6 +180,26 @@ class StageService {
 	}
 
 	async getTeacherWorkspace(input: {
+		roundId: number;
+		teacherId: string;
+		schoolId: string;
+		studentIds: string[];
+		academicYear: string;
+	}) {
+		try {
+			return await this.buildTeacherWorkspace(input);
+		} catch (error) {
+			logger.error({
+				message: 'Error building teacher workspace',
+				error: (error as Error).message,
+				roundId: input.roundId,
+				teacherId: input.teacherId,
+			});
+			throw error;
+		}
+	}
+
+	private async buildTeacherWorkspace(input: {
 		roundId: number;
 		teacherId: string;
 		schoolId: string;

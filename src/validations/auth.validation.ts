@@ -3,18 +3,12 @@ import { z } from 'zod';
 export const login = {
 	body: z.object({
 		teacherCode: z.string().trim().min(1, 'Teacher ID is required').max(50),
-		mobile: z
-			.string()
-			.trim()
-			.regex(/^[6-9]\d{9}$/, 'Enter a valid 10-digit mobile number'),
 		ssoDetails: z
 			.object({
-				grant_token: z.string().optional(),
+				grant_token: z.string().min(1, 'SSO grant_token is required'),
 				expires_at: z.number().optional(),
 			})
-			.passthrough()
-			.optional()
-			.default({}),
+			.passthrough(),
 	}),
 };
 

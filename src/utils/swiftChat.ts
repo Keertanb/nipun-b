@@ -11,16 +11,25 @@ export type SwiftChatUserDetails = {
 
 /**
  * Resolve SwiftChat / Kluster user from MiniApp grant_token.
- * Mirrors back-to-school-survey-backend swiftChatUserDetailsApi.
+ * `user_id` is the SSO mobile number used for teacher login.
  */
 export async function getSwiftChatUserDetails(grantToken?: string): Promise<SwiftChatUserDetails> {
 	if (!grantToken) {
-		return { user_id: '', name: '', email: '', email_verified: false };
+		throw new Error('SSO grant_token is required');
 	}
 
 	if (!config.kluster.url || !config.kluster.apiToken || !config.kluster.miniAppUuid) {
-		logger.warn({ message: 'Kluster config missing; skipping SwiftChat user lookup' });
-		return { user_id: '', name: '', email: '', email_verified: false };
+		if (config.environment === 'development') {
+			// Local browser mocks use a fixed grant_token; map it to a demo mobile.
+			logger.warn({ message: 'Kluster config missing; using development SSO mobile mock' });
+			return {
+				user_id: '9662860610',
+				name: 'Demo SSO User',
+				email: '',
+				email_verified: false,
+			};
+		}
+		throw new Error('SwiftChat / Kluster is not configured');
 	}
 
 	const headers = {

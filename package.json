@@ -34,6 +34,7 @@
 		"sequelize-cli": "^6.6.5",
 		"sequelize-typescript": "^2.1.6",
 		"winston": "^3.19.0",
+		"winston-cloudwatch": "^6.3.0",
 		"zod": "^4.3.5"
 	},
 	"devDependencies": {

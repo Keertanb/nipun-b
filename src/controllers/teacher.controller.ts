@@ -1,10 +1,11 @@
-import { Request, Response } from 'express';
+import { NextFunction, Request, Response } from 'express';
 import RegistryService from '../services/registry.service';
 import ReviewService from '../services/review.service';
 import RoundService from '../services/round.service';
 import StageService from '../services/stage.service';
 import logger from '../utils/logger';
 import config from '../config';
+import { STATUS_CODES } from '../utils/statusCodes';
 import { GetStudentsQuery } from '../validations/teacher.validation';
 import { SaveInterventionBody, TeacherCreateQuestionBody } from '../validations/stage.validation';
 import { GRADES, GRADE_LABEL, REGISTRY_GRADE_CODE, registryGradeToApp } from '../utils/constants';
@@ -52,7 +53,7 @@ async function resolveTeacherSchoolStudents(teacherId: string) {
 }
 
 class TeacherController {
-	async profile(req: Request, res: Response) {
+	async profile(req: Request, res: Response, next: NextFunction) {
 		try {
 			const teacherId = req.user.userId;
 			let teacherData = null;
@@ -117,12 +118,11 @@ class TeacherController {
 				req.t('teacher.profileFetchedSuccessfully'),
 			);
 		} catch (error) {
-			logger.error({ message: 'Profile error:', error: (error as Error).message });
-			return res.handler.serverError({}, (error as Error).message || req.t('auth.loginFailed'));
+			return next(error);
 		}
 	}
 
-	async getStudents(req: Request<unknown, unknown, unknown, GetStudentsQuery>, res: Response) {
+	async getStudents(req: Request<unknown, unknown, unknown, GetStudentsQuery>, res: Response, next: NextFunction) {
 		try {
 			const { grade } = req.query;
 			const teacherId = req.user.userId;
@@ -196,12 +196,11 @@ class TeacherController {
 				req.t('teacher.studentsFetchedSuccessfully'),
 			);
 		} catch (error) {
-			logger.error({ message: 'Get students error:', error: (error as Error).message });
-			return res.handler.serverError({}, (error as Error).message || req.t('auth.loginFailed'));
+			return next(error);
 		}
 	}
 
-	async stageWorkspace(req: Request, res: Response) {
+	async stageWorkspace(req: Request, res: Response, next: NextFunction) {
 		try {
 			const teacherId = req.user.userId;
 			const { teacherData, students } = await resolveTeacherSchoolStudents(teacherId);
@@ -229,12 +228,11 @@ class TeacherController {
 				...workspace,
 			});
 		} catch (error) {
-			logger.error({ message: 'Stage workspace error', error: (error as Error).message });
-			return res.handler.serverError({}, (error as Error).message || 'Failed to load stage workspace');
+			return next(error);
 		}
 	}
 
-	async completeStage(req: Request, res: Response) {
+	async completeStage(req: Request, res: Response, next: NextFunction) {
 		try {
 			const teacherId = req.user.userId;
 			const stageId = Number(req.params.stageId);
@@ -261,16 +259,16 @@ class TeacherController {
 				...workspace,
 			});
 		} catch (error) {
-			logger.error({ message: 'Complete stage error', error: (error as Error).message });
-			const msg = (error as Error).message || 'Failed to complete stage';
+			const err = error as Error & { status?: number };
+			const msg = err.message || '';
 			if (msg.includes('not complete') || msg.includes('active stage') || msg.includes('locked')) {
-				return res.handler.badRequest({}, msg);
+				err.status = STATUS_CODES.BAD_REQUEST;
 			}
-			return res.handler.serverError({}, msg);
+			return next(err);
 		}
 	}
 
-	async addStageQuestion(req: Request<{ stageId: string }, unknown, TeacherCreateQuestionBody>, res: Response) {
+	async addStageQuestion(req: Request<{ stageId: string }, unknown, TeacherCreateQuestionBody>, res: Response, next: NextFunction) {
 		try {
 			const teacherId = req.user.userId;
 			const stageId = Number(req.params.stageId);
@@ -283,12 +281,11 @@ class TeacherController {
 			});
 			return res.handler.created(question, 'Question added');
 		} catch (error) {
-			logger.error({ message: 'Teacher add question error', error: (error as Error).message });
-			return res.handler.serverError({}, (error as Error).message || 'Failed to add question');
+			return next(error);
 		}
 	}
 
-	async saveIntervention(req: Request<{ stageId: string }, unknown, SaveInterventionBody>, res: Response) {
+	async saveIntervention(req: Request<{ stageId: string }, unknown, SaveInterventionBody>, res: Response, next: NextFunction) {
 		try {
 			const teacherId = req.user.userId;
 			const stageId = Number(req.params.stageId);
@@ -306,10 +303,9 @@ class TeacherController {
 			});
 			return res.handler.success(saved);
 		} catch (error) {
-			logger.error({ message: 'Save intervention error', error: (error as Error).message });
-			const msg = (error as Error).message || 'Failed to save intervention';
-			if (msg.includes('only be saved')) return res.handler.badRequest({}, msg);
-			return res.handler.serverError({}, msg);
+			const err = error as Error & { status?: number };
+			if (err.message?.includes('only be saved')) err.status = STATUS_CODES.BAD_REQUEST;
+			return next(err);
 		}
 	}
 }

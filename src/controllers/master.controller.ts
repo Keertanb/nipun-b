@@ -1,4 +1,4 @@
-import { Request, Response } from 'express';
+import { NextFunction, Request, Response } from 'express';
 import MasterService from '../services/master.service';
 import RegistryService from '../services/registry.service';
 import ReviewService from '../services/review.service';
@@ -19,39 +19,36 @@ const reviewService = new ReviewService();
 const roundService = new RoundService();
 
 class MasterController {
-	async getAllDistricts(_req: Request, res: Response) {
+	async getAllDistricts(_req: Request, res: Response, next: NextFunction) {
 		try {
 			const districts = await masterService.getAllDistricts();
 			return res.handler.success(districts);
 		} catch (error) {
-			logger.error({ message: 'Error fetching districts', error: (error as Error).message });
-			return res.handler.serverError({}, (error as Error).message || 'Failed to fetch districts');
+			return next(error);
 		}
 	}
 
-	async getBlocksByDistrictId(req: Request<unknown, unknown, unknown, GetBlocksQuery>, res: Response) {
+	async getBlocksByDistrictId(req: Request<unknown, unknown, unknown, GetBlocksQuery>, res: Response, next: NextFunction) {
 		try {
 			const { districtId } = req.query;
 			const blocks = await masterService.getBlocksByDistrictId(districtId);
 			return res.handler.success(blocks);
 		} catch (error) {
-			logger.error({ message: 'Error fetching blocks', error: (error as Error).message });
-			return res.handler.serverError({}, (error as Error).message || 'Failed to fetch blocks');
+			return next(error);
 		}
 	}
 
-	async getClustersByBlockId(req: Request<unknown, unknown, unknown, GetClustersQuery>, res: Response) {
+	async getClustersByBlockId(req: Request<unknown, unknown, unknown, GetClustersQuery>, res: Response, next: NextFunction) {
 		try {
 			const { blockId } = req.query;
 			const clusters = await masterService.getClustersByBlockId(blockId);
 			return res.handler.success(clusters);
 		} catch (error) {
-			logger.error({ message: 'Error fetching clusters', error: (error as Error).message });
-			return res.handler.serverError({}, (error as Error).message || 'Failed to fetch clusters');
+			return next(error);
 		}
 	}
 
-	async getSchools(req: Request<unknown, unknown, unknown, GetSchoolsQuery>, res: Response) {
+	async getSchools(req: Request<unknown, unknown, unknown, GetSchoolsQuery>, res: Response, next: NextFunction) {
 		try {
 			const { blockId, clusterId, villageId } = req.query;
 			const schools = await masterService.getSchoolList({
@@ -61,12 +58,11 @@ class MasterController {
 			});
 			return res.handler.success(schools);
 		} catch (error) {
-			logger.error({ message: 'Error fetching schools', error: (error as Error).message });
-			return res.handler.serverError({}, (error as Error).message || 'Failed to fetch schools');
+			return next(error);
 		}
 	}
 
-	async getSchoolById(req: Request<{ schoolId: string }>, res: Response) {
+	async getSchoolById(req: Request<{ schoolId: string }>, res: Response, next: NextFunction) {
 		try {
 			const { schoolId } = req.params;
 			const school = await registryService.getSchoolDetailsById(schoolId);
@@ -85,12 +81,11 @@ class MasterController {
 				udise: school.udise || school.schoolid,
 			});
 		} catch (error) {
-			logger.error({ message: 'Error fetching school details', error: (error as Error).message });
-			return res.handler.serverError({}, (error as Error).message || 'Failed to fetch school details');
+			return next(error);
 		}
 	}
 
-	async getSchoolStudents(req: Request<GetSchoolStudentsParams>, res: Response) {
+	async getSchoolStudents(req: Request<GetSchoolStudentsParams>, res: Response, next: NextFunction) {
 		try {
 			const { schoolId } = req.params;
 
@@ -152,7 +147,6 @@ class MasterController {
 				'Std 5': { Bad: 0, Average: 0, Good: 0 },
 			};
 
-			// Count each subject rating (Gujarati + Maths) in the matrix
 			mapped.forEach((s) => {
 				if (!s.classLabel || !matrix[s.classLabel]) return;
 				for (const subject of ['Gujarati', 'Maths'] as const) {
@@ -185,8 +179,7 @@ class MasterController {
 				canSubmit: current.canSubmit,
 			});
 		} catch (error) {
-			logger.error({ message: 'Error fetching school students', error: (error as Error).message });
-			return res.handler.serverError({}, (error as Error).message || 'Failed to fetch school students');
+			return next(error);
 		}
 	}
 }

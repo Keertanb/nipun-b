@@ -1,9 +1,8 @@
-import { Request, Response } from 'express';
+import { NextFunction, Request, Response } from 'express';
 import config from '../config';
 import ReviewService from '../services/review.service';
 import RoundService from '../services/round.service';
 import StageService from '../services/stage.service';
-import logger from '../utils/logger';
 import { SubmitReviewBody } from '../validations/review.validation';
 import { registryGradeToApp, REVIEW_SUBJECTS } from '../utils/constants';
 
@@ -12,7 +11,7 @@ const roundService = new RoundService();
 const stageService = new StageService();
 
 class ReviewController {
-	async getReview(req: Request, res: Response) {
+	async getReview(req: Request, res: Response, next: NextFunction) {
 		try {
 			const studentId = String(req.params.studentId);
 			const current = await roundService.getCurrentRoundForReviews(config.academicYear);
@@ -52,12 +51,11 @@ class ReviewController {
 				req.t('review.fetchedSuccessfully'),
 			);
 		} catch (error) {
-			logger.error({ message: 'Get review error:', error: (error as Error).message });
-			return res.handler.serverError({}, (error as Error).message);
+			return next(error);
 		}
 	}
 
-	async submitReview(req: Request<{ studentId: string }, unknown, SubmitReviewBody>, res: Response) {
+	async submitReview(req: Request<{ studentId: string }, unknown, SubmitReviewBody>, res: Response, next: NextFunction) {
 		try {
 			const studentId = String(req.params.studentId);
 			const { reviews } = req.body;
@@ -122,8 +120,7 @@ class ReviewController {
 				req.t('review.savedSuccessfully'),
 			);
 		} catch (error) {
-			logger.error({ message: 'Submit review error:', error: (error as Error).message });
-			return res.handler.serverError({}, (error as Error).message || req.t('review.saveFailed'));
+			return next(error);
 		}
 	}
 }

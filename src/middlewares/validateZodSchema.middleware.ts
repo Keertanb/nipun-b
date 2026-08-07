@@ -1,6 +1,5 @@
 import { z } from 'zod';
 import { Request, Response, NextFunction } from 'express';
-import logger from '../utils/logger';
 
 type Schema = {
 	body: z.ZodSchema;
@@ -30,15 +29,6 @@ const validateZodSchema = (schema: Partial<Schema>) => (req: Request, res: Respo
 	});
 
 	if (errorMessage.length) {
-		logger.error({
-			message: 'Validation error',
-			error: errorMessage,
-			path: req.path,
-			method: req.method,
-			params: req.params,
-			query: req.query,
-			body: req.body,
-		});
 		return res.handler.badRequest({}, errorMessage);
 	}
 

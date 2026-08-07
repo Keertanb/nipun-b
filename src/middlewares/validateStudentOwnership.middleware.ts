@@ -1,7 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import RegistryService from '../services/registry.service';
 import { GRADES, REGISTRY_GRADE_CODE } from '../utils/constants';
-import logger from '../utils/logger';
 import { StudentResponseType } from '../types/registry.types';
 
 const registryService = new RegistryService();
@@ -35,8 +34,7 @@ const validateStudentOwnership = async (req: Request, res: Response, next: NextF
 		req.teacherSchoolId = teacherData.schoolid;
 		return next();
 	} catch (error) {
-		logger.error({ message: 'Student ownership check error:', error: (error as Error).message });
-		return res.handler.serverError({}, (error as Error).message);
+		return next(error);
 	}
 };
 

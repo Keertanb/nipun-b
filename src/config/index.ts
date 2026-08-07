@@ -44,6 +44,15 @@ const envSchema = z.object({
 	KLUSTER_API_URL: z.string().default(''),
 	KLUSTER_API_TOKEN: z.string().default(''),
 	MINI_APP_UUID: z.string().default(''),
+
+	/** AWS CloudWatch (used when NODE_ENV !== development) */
+	CLOUDWATCH_LOG_GROUP: z.string().default('nipun-gujarat-api'),
+	CLOUDWATCH_LOG_STREAM_NAME: z.string().default('nipun-gujarat'),
+	CLOUDWATCH_RETENTION_DAYS: z
+		.string()
+		.default('30')
+		.transform((arg) => parseInt(arg, 10)),
+	CLOUDWATCH_REGION: z.string().default('ap-south-1'),
 });
 
 const parseEnv = () => {
@@ -99,6 +108,12 @@ const config = {
 		url: env.KLUSTER_API_URL,
 		apiToken: env.KLUSTER_API_TOKEN,
 		miniAppUuid: env.MINI_APP_UUID,
+	},
+	cloudwatch: {
+		region: env.CLOUDWATCH_REGION,
+		logGroup: env.CLOUDWATCH_LOG_GROUP,
+		logStreamName: env.CLOUDWATCH_LOG_STREAM_NAME,
+		retentionInDays: env.CLOUDWATCH_RETENTION_DAYS,
 	},
 };
 

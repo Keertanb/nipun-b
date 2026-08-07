@@ -1,6 +1,6 @@
-import { Request, Response } from 'express';
+import { NextFunction, Request, Response } from 'express';
 import StageService from '../services/stage.service';
-import logger from '../utils/logger';
+import { STATUS_CODES } from '../utils/statusCodes';
 import {
 	CreateQuestionBody,
 	CreateStageBody,
@@ -12,24 +12,27 @@ const stageService = new StageService();
 
 function parseId(value: string, label: string) {
 	const n = Number(value);
-	if (!Number.isFinite(n) || n <= 0) throw new Error(`Invalid ${label}`);
+	if (!Number.isFinite(n) || n <= 0) {
+		const err = new Error(`Invalid ${label}`) as Error & { status: number };
+		err.status = STATUS_CODES.BAD_REQUEST;
+		throw err;
+	}
 	return n;
 }
 
 class StageController {
-	async list(req: Request, res: Response) {
+	async list(req: Request, res: Response, next: NextFunction) {
 		try {
 			const roundId = parseId(String(req.params.roundId), 'roundId');
 			await stageService.ensureDefaultStages(roundId);
 			const stages = await stageService.listStages(roundId);
 			return res.handler.success({ roundId, stages });
 		} catch (error) {
-			logger.error({ message: 'List stages error', error: (error as Error).message });
-			return res.handler.serverError({}, (error as Error).message || 'Failed to list stages');
+			return next(error);
 		}
 	}
 
-	async create(req: Request<{ roundId: string }, unknown, CreateStageBody>, res: Response) {
+	async create(req: Request<{ roundId: string }, unknown, CreateStageBody>, res: Response, next: NextFunction) {
 		try {
 			const roundId = parseId(String(req.params.roundId), 'roundId');
 			const created = await stageService.createStage({
@@ -42,14 +45,16 @@ class StageController {
 			});
 			return res.handler.created(created, 'Stage created');
 		} catch (error) {
-			logger.error({ message: 'Create stage error', error: (error as Error).message });
-			const msg = (error as Error).message || 'Failed to create stage';
-			if (msg.toLowerCase().includes('unique')) return res.handler.badRequest({}, 'Stage code already exists');
-			return res.handler.serverError({}, msg);
+			const err = error as Error & { status?: number };
+			if (err.message?.toLowerCase().includes('unique')) {
+				err.message = 'Stage code already exists';
+				err.status = STATUS_CODES.BAD_REQUEST;
+			}
+			return next(err);
 		}
 	}
 
-	async update(req: Request<{ roundId: string; stageId: string }, unknown, UpdateStageBody>, res: Response) {
+	async update(req: Request<{ roundId: string; stageId: string }, unknown, UpdateStageBody>, res: Response, next: NextFunction) {
 		try {
 			const roundId = parseId(String(req.params.roundId), 'roundId');
 			const stageId = parseId(String(req.params.stageId), 'stageId');
@@ -60,12 +65,11 @@ class StageController {
 			if (!updated) return res.handler.notFound({}, 'Stage not found');
 			return res.handler.success(updated);
 		} catch (error) {
-			logger.error({ message: 'Update stage error', error: (error as Error).message });
-			return res.handler.serverError({}, (error as Error).message || 'Failed to update stage');
+			return next(error);
 		}
 	}
 
-	async remove(req: Request, res: Response) {
+	async remove(req: Request, res: Response, next: NextFunction) {
 		try {
 			const roundId = parseId(String(req.params.roundId), 'roundId');
 			const stageId = parseId(String(req.params.stageId), 'stageId');
@@ -73,36 +77,33 @@ class StageController {
 			if (!ok) return res.handler.notFound({}, 'Stage not found');
 			return res.handler.success({ deleted: true });
 		} catch (error) {
-			logger.error({ message: 'Delete stage error', error: (error as Error).message });
-			const msg = (error as Error).message || 'Failed to delete stage';
-			if (msg.includes('Cannot delete')) return res.handler.badRequest({}, msg);
-			return res.handler.serverError({}, msg);
+			const err = error as Error & { status?: number };
+			if (err.message?.includes('Cannot delete')) err.status = STATUS_CODES.BAD_REQUEST;
+			return next(err);
 		}
 	}
 
-	async reorder(req: Request<{ roundId: string }, unknown, ReorderStagesBody>, res: Response) {
+	async reorder(req: Request<{ roundId: string }, unknown, ReorderStagesBody>, res: Response, next: NextFunction) {
 		try {
 			const roundId = parseId(String(req.params.roundId), 'roundId');
 			const stages = await stageService.reorderStages(roundId, req.body.stageIds);
 			return res.handler.success({ roundId, stages });
 		} catch (error) {
-			logger.error({ message: 'Reorder stages error', error: (error as Error).message });
-			return res.handler.serverError({}, (error as Error).message || 'Failed to reorder stages');
+			return next(error);
 		}
 	}
 
-	async listQuestions(req: Request, res: Response) {
+	async listQuestions(req: Request, res: Response, next: NextFunction) {
 		try {
 			const stageId = parseId(String(req.params.stageId), 'stageId');
 			const questions = await stageService.listQuestions(stageId);
 			return res.handler.success({ stageId, questions });
 		} catch (error) {
-			logger.error({ message: 'List questions error', error: (error as Error).message });
-			return res.handler.serverError({}, (error as Error).message || 'Failed to list questions');
+			return next(error);
 		}
 	}
 
-	async createQuestion(req: Request<{ roundId: string; stageId: string }, unknown, CreateQuestionBody>, res: Response) {
+	async createQuestion(req: Request<{ roundId: string; stageId: string }, unknown, CreateQuestionBody>, res: Response, next: NextFunction) {
 		try {
 			const stageId = parseId(String(req.params.stageId), 'stageId');
 			const question = await stageService.addQuestion(stageId, {
@@ -111,12 +112,11 @@ class StageController {
 			});
 			return res.handler.created(question, 'Question added');
 		} catch (error) {
-			logger.error({ message: 'Create question error', error: (error as Error).message });
-			return res.handler.serverError({}, (error as Error).message || 'Failed to add question');
+			return next(error);
 		}
 	}
 
-	async deleteQuestion(req: Request, res: Response) {
+	async deleteQuestion(req: Request, res: Response, next: NextFunction) {
 		try {
 			const stageId = parseId(String(req.params.stageId), 'stageId');
 			const questionId = parseId(String(req.params.questionId), 'questionId');
@@ -124,20 +124,18 @@ class StageController {
 			if (!ok) return res.handler.notFound({}, 'Question not found');
 			return res.handler.success({ deleted: true });
 		} catch (error) {
-			logger.error({ message: 'Delete question error', error: (error as Error).message });
-			return res.handler.serverError({}, (error as Error).message || 'Failed to delete question');
+			return next(error);
 		}
 	}
 
-	async teacherProgress(req: Request, res: Response) {
+	async teacherProgress(req: Request, res: Response, next: NextFunction) {
 		try {
 			const roundId = parseId(String(req.params.roundId), 'roundId');
 			await stageService.ensureDefaultStages(roundId);
 			const data = await stageService.getAdminTeacherProgress(roundId);
 			return res.handler.success({ roundId, ...data });
 		} catch (error) {
-			logger.error({ message: 'Teacher progress error', error: (error as Error).message });
-			return res.handler.serverError({}, (error as Error).message || 'Failed to load teacher progress');
+			return next(error);
 		}
 	}
 }

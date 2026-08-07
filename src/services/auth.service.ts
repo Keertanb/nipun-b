@@ -77,50 +77,50 @@ class AuthService {
 	}
 
 	/**
-	 * Login with teacherId + mobile (+ optional SwiftChat SSO).
-	 * No OTP in this system.
+	 * Login with teacherId + SSO. Mobile is resolved from SwiftChat via ssoDetails.grant_token.
 	 */
-	async loginWithTeacherMobile(input: {
+	async loginWithTeacherSso(input: {
 		teacherCode: string;
-		mobile: string;
-		ssoDetails?: Record<string, unknown>;
+		ssoDetails: Record<string, unknown>;
 		ipAddress: string;
 	}) {
 		const teacherCode = String(input.teacherCode).trim();
-		const mobile = normalizeMobile(input.mobile);
 		const ssoDetails = input.ssoDetails || {};
+		const grantToken = typeof ssoDetails.grant_token === 'string' ? ssoDetails.grant_token.trim() : '';
 
+		if (!grantToken) {
+			const err = new Error('SSO grant_token is required');
+			(err as Error & { status: number }).status = 400;
+			throw err;
+		}
+
+		let swiftChatUserMobile = '';
+		try {
+			const swiftUser = await getSwiftChatUserDetails(grantToken);
+			swiftChatUserMobile = normalizeMobile(swiftUser.user_id || '');
+		} catch (error) {
+			logger.error({ message: 'SwiftChat user details failed', error: (error as Error).message });
+			const err = new Error('Error while getting SwiftChat user details.');
+			(err as Error & { status: number }).status = 404;
+			throw err;
+		}
+
+		const mobile = swiftChatUserMobile;
 		if (!/^[6-9]\d{9}$/.test(mobile)) {
-			const err = new Error('Enter a valid 10-digit mobile number');
+			const err = new Error('Could not resolve a valid mobile number from SSO');
 			(err as Error & { status: number }).status = 400;
 			throw err;
 		}
 
 		const staticTeacher = findStaticTeacher(teacherCode);
 		if (staticTeacher && staticTeacher.mobile !== mobile) {
-			const err = new Error('Teacher code and mobile number do not match');
+			const err = new Error('Teacher code and SSO mobile number do not match');
 			(err as Error & { status: number }).status = 404;
 			throw err;
 		}
 
 		if (!staticTeacher) {
-			logger.info({ message: 'Teacher not in static catalog; allowing login with entered mobile', teacherCode });
-		}
-
-		let swiftChatUserMobile = '';
-		const grantToken = typeof ssoDetails?.grant_token === 'string' ? ssoDetails.grant_token : '';
-		if (grantToken) {
-			try {
-				const swiftUser = await getSwiftChatUserDetails(grantToken);
-				swiftChatUserMobile = swiftUser.user_id || '';
-			} catch (error) {
-				logger.error({ message: 'SwiftChat user details failed', error: (error as Error).message });
-				if (config.kluster.url) {
-					const err = new Error('Error while getting SwiftChat user details.');
-					(err as Error & { status: number }).status = 404;
-					throw err;
-				}
-			}
+			logger.info({ message: 'Teacher not in static catalog; allowing login with SSO mobile', teacherCode });
 		}
 
 		return this.createTeacherLoginSession({

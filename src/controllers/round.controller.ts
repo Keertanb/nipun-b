@@ -1,24 +1,23 @@
-import { Request, Response } from 'express';
+import { NextFunction, Request, Response } from 'express';
 import config from '../config';
 import RoundService from '../services/round.service';
-import logger from '../utils/logger';
+import { STATUS_CODES } from '../utils/statusCodes';
 import { CreateRoundBody, UpdateRoundBody } from '../validations/round.validation';
 
 const roundService = new RoundService();
 
 class RoundController {
-	async list(req: Request, res: Response) {
+	async list(req: Request, res: Response, next: NextFunction) {
 		try {
 			const academicYear = String(req.query.academicYear || config.academicYear);
 			const rounds = await roundService.listRounds(academicYear);
 			return res.handler.success({ academicYear, rounds });
 		} catch (error) {
-			logger.error({ message: 'List rounds error', error: (error as Error).message });
-			return res.handler.serverError({}, (error as Error).message || 'Failed to list rounds');
+			return next(error);
 		}
 	}
 
-	async active(req: Request, res: Response) {
+	async active(req: Request, res: Response, next: NextFunction) {
 		try {
 			const academicYear = String(req.query.academicYear || config.academicYear);
 			const current = await roundService.getCurrentRoundForReviews(academicYear);
@@ -28,12 +27,11 @@ class RoundController {
 				canSubmit: current.canSubmit,
 			});
 		} catch (error) {
-			logger.error({ message: 'Active round error', error: (error as Error).message });
-			return res.handler.serverError({}, (error as Error).message || 'Failed to fetch active round');
+			return next(error);
 		}
 	}
 
-	async create(req: Request<unknown, unknown, CreateRoundBody>, res: Response) {
+	async create(req: Request<unknown, unknown, CreateRoundBody>, res: Response, next: NextFunction) {
 		try {
 			const body = req.body;
 			const created = await roundService.createRound({
@@ -45,14 +43,13 @@ class RoundController {
 			});
 			return res.handler.created(created, req.t('common.createdSuccessfully'));
 		} catch (error) {
-			logger.error({ message: 'Create round error', error: (error as Error).message });
-			const msg = (error as Error).message || 'Failed to create round';
-			if (msg.includes('must be')) return res.handler.badRequest({}, msg);
-			return res.handler.serverError({}, msg);
+			const err = error as Error & { status?: number };
+			if (err.message?.includes('must be')) err.status = STATUS_CODES.BAD_REQUEST;
+			return next(err);
 		}
 	}
 
-	async update(req: Request<{ roundId: string }, unknown, UpdateRoundBody>, res: Response) {
+	async update(req: Request<{ roundId: string }, unknown, UpdateRoundBody>, res: Response, next: NextFunction) {
 		try {
 			const roundId = Number(req.params.roundId);
 			if (!Number.isFinite(roundId)) return res.handler.badRequest({}, 'Invalid roundId');
@@ -60,10 +57,9 @@ class RoundController {
 			if (!updated) return res.handler.notFound({}, 'Round not found');
 			return res.handler.success(updated);
 		} catch (error) {
-			logger.error({ message: 'Update round error', error: (error as Error).message });
-			const msg = (error as Error).message || 'Failed to update round';
-			if (msg.includes('must be')) return res.handler.badRequest({}, msg);
-			return res.handler.serverError({}, msg);
+			const err = error as Error & { status?: number };
+			if (err.message?.includes('must be')) err.status = STATUS_CODES.BAD_REQUEST;
+			return next(err);
 		}
 	}
 }
