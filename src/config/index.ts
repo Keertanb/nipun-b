@@ -39,6 +39,11 @@ const envSchema = z.object({
 	CTS_API_KEY: z.string().default(''),
 	CTS_CLIENT_KEY: z.string().default(''),
 	CTS_ACADEMIC_YEAR: z.string().default(''),
+
+	/** SwiftChat / Kluster SSO (optional until mini-app is wired) */
+	KLUSTER_API_URL: z.string().default(''),
+	KLUSTER_API_TOKEN: z.string().default(''),
+	MINI_APP_UUID: z.string().default(''),
 });
 
 const parseEnv = () => {
@@ -89,6 +94,11 @@ const config = {
 		apiKey: env.CTS_API_KEY,
 		clientKey: env.CTS_CLIENT_KEY,
 		academicYear: env.CTS_ACADEMIC_YEAR || env.ACADEMIC_YEAR,
+	},
+	kluster: {
+		url: env.KLUSTER_API_URL,
+		apiToken: env.KLUSTER_API_TOKEN,
+		miniAppUuid: env.MINI_APP_UUID,
 	},
 };
 
