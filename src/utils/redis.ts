@@ -1,13 +1,11 @@
 import { createClient } from 'redis';
+import { promisify } from 'util';
 import config from '../config';
 import logger from './logger';
 
 const client = createClient({
-	socket: {
-		host: config.redis.host,
-		port: config.redis.port,
-	},
-	RESP: 2,
+	host: config.redis.host,
+	port: config.redis.port,
 });
 
 client.on('connect', () => {
@@ -18,8 +16,11 @@ client.on('error', (error) => {
 	logger.error({ message: `Redis Error: ${error}` });
 });
 
-client.connect().catch((error) => {
-	logger.error({ message: `Redis connection failed: ${error}` });
-});
-
-export default client;
+export default {
+	get: promisify(client.get).bind(client),
+	del: (keys: string[]): Promise<number> =>
+		new Promise((resolve, reject) => {
+			client.del(keys, (error, reply) => (error ? reject(error) : resolve(reply)));
+		}),
+	pSetEx: promisify(client.psetex).bind(client),
+};
