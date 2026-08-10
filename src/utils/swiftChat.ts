@@ -1,82 +1,148 @@
 import axios from 'axios';
+import https from 'https';
 import config from '../config';
-import logger from './logger';
+import redis from './redis';
 
-export type SwiftChatUserDetails = {
-	user_id: string;
-	name?: string;
-	email?: string;
-	email_verified?: boolean;
+type RetryCount = { value: number };
+
+const httpConfig = {
+	maxSockets: 100,
+	maxFreeSockets: 10,
+	timeout: 5000,
+	freeSocketTimeout: 30000,
 };
 
-/**
- * Exchange MiniApp grant_token for Kluster access_token.
- * Mirrors back-to-school-survey-backend getAccessToken.
- */
-async function getAccessToken(grantToken: string): Promise<string> {
-	const url = `${config.kluster.url}/mini-apps/${config.kluster.miniAppUuid}/sso/get-access-token`;
-	const headers = {
-		'Content-Type': 'application/json',
-		Authorization: `Bearer ${config.kluster.apiToken}`,
-	};
+const axiosInstance = axios.create({
+	httpsAgent: new https.Agent({ keepAlive: true, ...httpConfig }),
+	timeout: httpConfig.timeout,
+});
 
-	const response = await axios.post(url, { grant_token: grantToken }, { headers, timeout: 5000 });
-	if (response.status !== 200 || !response.data?.access_token) {
-		throw new Error('Something went wrong with Kluster Access Token');
-	}
-	return response.data.access_token as string;
-}
+const getAccessToken = async (grantToken: string): Promise<string> => {
+	const redisKey = `${config.redis.prefix}_get-access-token-retry-count`;
 
-/**
- * Resolve SwiftChat user from MiniApp grant_token.
- * `user_id` is the SSO mobile number (same as survey backend).
- */
-export async function getSwiftChatUserDetails(grantToken?: string): Promise<SwiftChatUserDetails> {
-	if (!grantToken) {
-		throw new Error('SSO grant_token is required');
-	}
+	let retryCount: RetryCount | null = null;
+	const cachedRetryCount = await redis.get(redisKey);
 
-	if (!config.kluster.url || !config.kluster.apiToken || !config.kluster.miniAppUuid) {
-		if (config.environment === 'development') {
-			logger.warn({
-				message: 'Kluster config missing; returning development SwiftChat user_id mock',
-			});
-			return {
-				user_id: '9662860610',
-				name: '',
-				email: '',
-				email_verified: false,
+	if (cachedRetryCount != null) {
+		retryCount = JSON.parse(cachedRetryCount);
+
+		if (retryCount!.value >= 5) {
+			throw {
+				message: 'timeout exceeded',
+				name: 'Error with retryCount exceeded in getAccessToken',
 			};
 		}
-		throw new Error('SwiftChat / Kluster is not configured');
 	}
 
+	let response;
+	let payload;
+
 	try {
-		const accessToken = await getAccessToken(grantToken);
-		const url = `${config.kluster.url}/mini-apps/${config.kluster.miniAppUuid}/sso/get-user-details`;
+		const url = `${config.kluster.url}/mini-apps/${config.kluster.miniAppUuid}/sso/get-access-token`;
+
+		payload = { grant_token: grantToken };
+
 		const headers = {
 			'Content-Type': 'application/json',
 			Authorization: `Bearer ${config.kluster.apiToken}`,
 		};
 
-		const response = await axios.post(url, { access_token: accessToken }, { headers, timeout: 5000 });
-		if (response.status !== 200) {
-			throw new Error('Something went wrong with Kluster user details');
+		response = await axiosInstance({
+			method: 'post',
+			url,
+			data: payload,
+			timeout: 5000,
+			headers,
+		});
+
+		await redis.del([redisKey]);
+
+		if (response.status !== 200) throw new Error('Something went wrong with Kluster Access Token');
+
+		return response.data.access_token;
+	} catch (error) {
+		if (axios.isCancel(error)) throw new Error('Request cancelled due to timeout in  Kluster Access Token');
+
+		const err = error as Error;
+		if (err.message.includes('timeout') || err.message.includes('ETIMEDOUT')) {
+			const cached = await redis.get(redisKey);
+
+			if (cached == null) retryCount = { value: 1 };
+			else {
+				retryCount = JSON.parse(cached);
+				retryCount!.value += 1;
+			}
+
+			await redis.pSetEx(redisKey, 1 * 1000 * 60, JSON.stringify(retryCount));
 		}
 
-		const data = response.data as SwiftChatUserDetails;
-		if (!data?.user_id) {
-			throw new Error('SwiftChat user details missing user_id');
-		}
-		return data;
-	} catch (error) {
-		const axiosErr = error as { message?: string; response?: { status?: number; data?: unknown } };
-		logger.error({
-			message: 'Error while getting user details',
-			error: axiosErr.message || (error as Error).message,
-			status: axiosErr.response?.status,
-			data: axiosErr.response?.data,
-		});
 		throw error;
 	}
-}
+};
+
+export const getSwiftChatUserDetails = async (grantToken: string) => {
+	const redisKey = `${config.redis.prefix}_get-user-details-retry-count`;
+
+	let retryCount: RetryCount | null = null;
+	const cachedRetryCount = await redis.get(redisKey);
+
+	if (cachedRetryCount != null) {
+		retryCount = JSON.parse(cachedRetryCount);
+
+		if (retryCount!.value >= 5) {
+			throw {
+				message: 'timeout exceeded',
+				name: 'Error with retryCount exceeded in getUserDetails',
+			};
+		}
+	}
+
+	let response;
+	let payload;
+
+	try {
+		const accessToken = await getAccessToken(grantToken);
+
+		const url = `${config.kluster.url}/mini-apps/${config.kluster.miniAppUuid}/sso/get-user-details`;
+
+		payload = {
+			access_token: accessToken,
+		};
+
+		const headers = {
+			'Content-Type': 'application/json',
+			Authorization: `Bearer ${config.kluster.apiToken}`,
+		};
+
+		response = await axiosInstance({
+			method: 'post',
+			url,
+			data: payload,
+			timeout: 5000,
+			headers,
+		});
+
+		await redis.del([redisKey]);
+
+		if (response.status !== 200) throw new Error('Something went wrong with Kluster Access Token');
+
+		return response.data;
+	} catch (error) {
+		if (axios.isCancel(error)) throw new Error('Request cancelled due to timeout in  Kluster Access Token');
+
+		const err = error as Error;
+		if (err.message.includes('timeout') || err.message.includes('ETIMEDOUT')) {
+			const cached = await redis.get(redisKey);
+
+			if (cached == null) retryCount = { value: 1 };
+			else {
+				retryCount = JSON.parse(cached);
+				retryCount!.value += 1;
+			}
+
+			await redis.pSetEx(redisKey, 1 * 1000 * 60, JSON.stringify(retryCount));
+		}
+
+		throw error;
+	}
+};

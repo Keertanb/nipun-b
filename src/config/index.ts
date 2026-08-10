@@ -45,6 +45,13 @@ const envSchema = z.object({
 	KLUSTER_API_TOKEN: z.string().default(''),
 	MINI_APP_UUID: z.string().default(''),
 
+	REDIS_HOST: z.string().default('localhost'),
+	REDIS_PORT: z
+		.string()
+		.default('6379')
+		.transform((arg) => parseInt(arg, 10)),
+	REDIS_PREFIX: z.string().default('nipun_gujarat'),
+
 	/** AWS CloudWatch (used when NODE_ENV !== development) */
 	CLOUDWATCH_LOG_GROUP: z.string().default('nipun-gujarat-api'),
 	CLOUDWATCH_LOG_STREAM_NAME: z.string().default('nipun-gujarat'),
@@ -108,6 +115,11 @@ const config = {
 		url: env.KLUSTER_API_URL,
 		apiToken: env.KLUSTER_API_TOKEN,
 		miniAppUuid: env.MINI_APP_UUID,
+	},
+	redis: {
+		host: env.REDIS_HOST,
+		port: env.REDIS_PORT,
+		prefix: env.REDIS_PREFIX,
 	},
 	cloudwatch: {
 		region: env.CLOUDWATCH_REGION,
