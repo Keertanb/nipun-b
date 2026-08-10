@@ -102,7 +102,7 @@ class AuthService {
 			} catch (error) {
 				logger.error({
 					message: 'Error while getting user details',
-					error,
+					error: (error as Error).message,
 					ssoDetails,
 				});
 				throw httpError('Error while getting user details.', 404, 'SWIFTCHAT_FAILED');
