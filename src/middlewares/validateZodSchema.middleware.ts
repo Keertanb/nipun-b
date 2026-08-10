@@ -23,7 +23,7 @@ const validateZodSchema = (schema: Partial<Schema>) => (req: Request, res: Respo
 				errorMessage += result.error.issues.map((err: z.core.$ZodIssue) => `${err.path.join('.')}: ${err.message}`).join(', ');
 			} else {
 				if (key === 'body') req.body = result.data;
-				else Object.defineProperty(req, key, { ...Object.getOwnPropertyDescriptor(req, key), writable: false, value: result.data });
+				else Object.defineProperty(req, key, { ...Object.getOwnPropertyDescriptor(req, key), writable: true, value: result.data });
 			}
 		}
 	});
