@@ -1,9 +1,51 @@
-import { Op } from 'sequelize';
+import { Op, QueryTypes } from 'sequelize';
+import sequelize from '../database';
 import RoundStage from '../database/models/RoundStage.model';
 import ReviewRound from '../database/models/ReviewRound.model';
 import StageQuestion from '../database/models/StageQuestion.model';
 import TeacherStageProgress from '../database/models/TeacherStageProgress.model';
 import StageIntervention from '../database/models/StageIntervention.model';
+
+const STAGE_CORE_ATTRIBUTES = [
+	'id',
+	'roundId',
+	'code',
+	'name',
+	'description',
+	'sortOrder',
+	'stageType',
+	'createdAt',
+	'updatedAt',
+] as const;
+
+let stageDateColumnsReady: boolean | null = null;
+
+async function hasStageDateColumns(): Promise<boolean> {
+	if (stageDateColumnsReady === true) return true;
+	try {
+		await sequelize.query('SELECT start_date, end_date FROM round_stages LIMIT 0', {
+			type: QueryTypes.SELECT,
+		});
+		stageDateColumnsReady = true;
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+async function stageFindAttributes() {
+	const withDates = await hasStageDateColumns();
+	return withDates ? undefined : [...STAGE_CORE_ATTRIBUTES];
+}
+
+const STAGE_CREATE_CORE_FIELDS = [
+	'roundId',
+	'code',
+	'name',
+	'description',
+	'sortOrder',
+	'stageType',
+] as const;
 
 export type StageType = 'assessment' | 'intervention' | 'summary';
 export type ProgressStatus = 'locked' | 'active' | 'completed';
@@ -77,8 +119,10 @@ export const SUGGESTED_ACTIONS = [
 
 class StageModel {
 	async listByRound(roundId: number) {
+		const attributes = await stageFindAttributes();
 		return RoundStage.findAll({
 			where: { roundId },
+			...(attributes ? { attributes } : {}),
 			order: [
 				['sortOrder', 'ASC'],
 				['id', 'ASC'],
@@ -87,39 +131,65 @@ class StageModel {
 	}
 
 	async getById(stageId: number) {
-		return RoundStage.findByPk(stageId);
+		const attributes = await stageFindAttributes();
+		return RoundStage.findByPk(stageId, attributes ? { attributes } : undefined);
 	}
 
 	async getByRoundAndId(roundId: number, stageId: number) {
-		return RoundStage.findOne({ where: { id: stageId, roundId } });
+		const attributes = await stageFindAttributes();
+		return RoundStage.findOne({
+			where: { id: stageId, roundId },
+			...(attributes ? { attributes } : {}),
+		});
 	}
 
 	async createStage(input: CreateStageInput) {
 		const maxOrder = await RoundStage.max('sortOrder', { where: { roundId: input.roundId } });
 		const sortOrder = input.sortOrder ?? (Number(maxOrder) || 0) + 1;
-		return RoundStage.create({
-			roundId: input.roundId,
-			code: input.code,
-			name: input.name,
-			description: input.description || '',
-			sortOrder,
-			stageType: input.stageType || 'assessment',
-			startDate: input.startDate ?? null,
-			endDate: input.endDate ?? null,
-		});
+		const withDates = await hasStageDateColumns();
+		return RoundStage.create(
+			{
+				roundId: input.roundId,
+				code: input.code,
+				name: input.name,
+				description: input.description || '',
+				sortOrder,
+				stageType: input.stageType || 'assessment',
+				...(withDates
+					? {
+							startDate: input.startDate ?? null,
+							endDate: input.endDate ?? null,
+						}
+					: {}),
+			},
+			{
+				fields: withDates
+					? [...STAGE_CREATE_CORE_FIELDS, 'startDate', 'endDate']
+					: [...STAGE_CREATE_CORE_FIELDS],
+			},
+		);
 	}
 
 	async updateStage(stageId: number, input: UpdateStageInput) {
-		const stage = await RoundStage.findByPk(stageId);
+		const stage = await this.getById(stageId);
 		if (!stage) return null;
+		const withDates = await hasStageDateColumns();
+		if (!withDates && (input.startDate !== undefined || input.endDate !== undefined)) {
+			throw Object.assign(
+				new Error(
+					'Stage date columns are missing. Run backend/src/database/queries/add_round_stage_dates.sql on the database.',
+				),
+				{ status: 503 },
+			);
+		}
 		await stage.update({
 			...(input.code != null ? { code: input.code } : {}),
 			...(input.name != null ? { name: input.name } : {}),
 			...(input.description != null ? { description: input.description } : {}),
 			...(input.sortOrder != null ? { sortOrder: input.sortOrder } : {}),
 			...(input.stageType != null ? { stageType: input.stageType } : {}),
-			...(input.startDate !== undefined ? { startDate: input.startDate } : {}),
-			...(input.endDate !== undefined ? { endDate: input.endDate } : {}),
+			...(withDates && input.startDate !== undefined ? { startDate: input.startDate } : {}),
+			...(withDates && input.endDate !== undefined ? { endDate: input.endDate } : {}),
 		});
 		return stage;
 	}
@@ -150,21 +220,28 @@ class StageModel {
 		if (existing.length) return existing;
 
 		const round = await ReviewRound.findByPk(roundId);
+		const withDates = await hasStageDateColumns();
 		const startDate = round?.startDate ?? null;
 		const endDate = round?.endDate ?? null;
 
 		const created: RoundStage[] = [];
 		for (const def of DEFAULT_STAGES) {
-			const stage = await RoundStage.create({
-				roundId,
-				code: def.code,
-				name: def.name,
-				description: def.description,
-				sortOrder: def.sortOrder,
-				stageType: def.stageType,
-				startDate,
-				endDate,
-			});
+			const stage = await RoundStage.create(
+				{
+					roundId,
+					code: def.code,
+					name: def.name,
+					description: def.description,
+					sortOrder: def.sortOrder,
+					stageType: def.stageType,
+					...(withDates ? { startDate, endDate } : {}),
+				},
+				{
+					fields: withDates
+						? [...STAGE_CREATE_CORE_FIELDS, 'startDate', 'endDate']
+						: [...STAGE_CREATE_CORE_FIELDS],
+				},
+			);
 			created.push(stage);
 			if (def.code === 'midline') {
 				for (const q of DEFAULT_MIDLINE_QUESTIONS) {

@@ -75,6 +75,57 @@ class MasterModel {
 			throw error;
 		}
 	}
+
+	async getSchoolList(params: {
+		blockId: string;
+		clusterId?: string | null;
+	}): Promise<Array<{ id: string; name: string; blockId: string; clusterId: string | null }>> {
+		try {
+			const bind: string[] = [String(params.blockId)];
+			let clusterFilter = '';
+			if (params.clusterId) {
+				bind.push(String(params.clusterId));
+				clusterFilter = `AND sm."clusterId"::varchar = $2`;
+			}
+
+			const rows = await sequelize.query<{
+				id: string;
+				name: string;
+				blockId: string;
+				clusterId: string | null;
+			}>(
+				`
+				SELECT
+					sm."schoolId"::varchar AS id,
+					sm."schoolName"::varchar AS name,
+					sm."blockId"::varchar AS "blockId",
+					sm."clusterId"::varchar AS "clusterId"
+				FROM school_master sm
+				WHERE sm."blockId"::varchar = $1
+					${clusterFilter}
+					AND sm."isActive" = 1
+					AND COALESCE(sm."isClosed", 0) = 0
+				ORDER BY sm."schoolName"
+				`,
+				{
+					bind,
+					type: QueryTypes.SELECT,
+				},
+			);
+
+			return (rows || [])
+				.map((r) => ({
+					id: String(r.id),
+					name: String(r.name),
+					blockId: String(r.blockId || params.blockId),
+					clusterId: r.clusterId != null ? String(r.clusterId) : null,
+				}))
+				.filter((r) => r.id && r.name);
+		} catch (error) {
+			logger.error(error);
+			throw error;
+		}
+	}
 }
 
 export default MasterModel;

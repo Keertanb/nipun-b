@@ -4,6 +4,7 @@ import StageModel, {
 	SUGGESTED_ACTIONS,
 } from '../models/stage.model';
 import ReviewModel from '../models/review.model';
+import ReviewRound from '../database/models/ReviewRound.model';
 import { StudentReview } from '../database/models/StudentReview.model';
 import { REVIEW_SUBJECTS, ReviewRating } from '../utils/constants';
 import logger from '../utils/logger';
@@ -15,7 +16,18 @@ class StageService {
 	async listStages(roundId: number) {
 		try {
 			const stages = await stageModel.listByRound(roundId);
-			return stages.map((s) => stageModel.serializeStage(s));
+			const serialized = stages.map((s) => stageModel.serializeStage(s));
+			const missingDates = serialized.some((s) => !s.startDate || !s.endDate);
+			if (!missingDates) return serialized;
+
+			const round = await ReviewRound.findByPk(roundId);
+			if (!round?.startDate && !round?.endDate) return serialized;
+
+			return serialized.map((s) => ({
+				...s,
+				startDate: s.startDate || round.startDate || null,
+				endDate: s.endDate || round.endDate || null,
+			}));
 		} catch (error) {
 			logger.error({ message: 'Error listing stages', error: (error as Error).message, roundId });
 			throw error;
