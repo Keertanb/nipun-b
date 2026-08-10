@@ -7,6 +7,7 @@ const client = createClient({
 		host: config.redis.host,
 		port: config.redis.port,
 	},
+	RESP: 2,
 });
 
 client.on('connect', () => {
