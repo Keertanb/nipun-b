@@ -13,7 +13,11 @@ const emptySsoSchema = z.object({}).strict();
 
 export const login = {
 	body: z.object({
-		teacherCode: z.string().trim().min(1, 'Teacher ID is required').max(50),
+		teacherCode: z
+			.string()
+			.trim()
+			.min(1, 'Teacher ID is required')
+			.regex(/^\d{1,8}$/, 'Teacher ID must be at most 8 digits'),
 		ssoDetails: z.union([ssoDetailsSchema, emptySsoSchema]).default({}),
 	}),
 };
