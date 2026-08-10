@@ -1,5 +1,5 @@
-import sql from '../database/sql';
-import { executeQuery } from '../database';
+import { QueryTypes } from 'sequelize';
+import sequelize from '../database';
 import logger from '../utils/logger';
 
 export type NamedEntity = { id: string; name: string };
@@ -7,13 +7,16 @@ export type NamedEntity = { id: string; name: string };
 class MasterModel {
 	async getAllDistricts(): Promise<NamedEntity[]> {
 		try {
-			const rows = await executeQuery<{ id: string; name: string }>(`
+			const rows = await sequelize.query<{ id: string; name: string }>(
+				`
 				SELECT
 					dm."districtId"::varchar AS id,
 					dm."districtName"::varchar AS name
 				FROM district_master dm
 				ORDER BY dm."districtName"
-			`);
+				`,
+				{ type: QueryTypes.SELECT },
+			);
 			return (rows || [])
 				.map((r) => ({ id: String(r.id), name: String(r.name) }))
 				.filter((r) => r.id && r.name);
@@ -25,7 +28,7 @@ class MasterModel {
 
 	async getBlocksByDistrictId(districtId: string): Promise<NamedEntity[]> {
 		try {
-			const rows = await executeQuery<{ id: string; name: string }>(
+			const rows = await sequelize.query<{ id: string; name: string }>(
 				`
 				SELECT
 					bm."blockId"::varchar AS id,
@@ -34,7 +37,10 @@ class MasterModel {
 				WHERE bm."districtId"::varchar = $1
 				ORDER BY bm."blockName"
 				`,
-				[{ name: 'districtId', type: sql.VarChar(20), value: String(districtId) }],
+				{
+					bind: [String(districtId)],
+					type: QueryTypes.SELECT,
+				},
 			);
 			return (rows || [])
 				.map((r) => ({ id: String(r.id), name: String(r.name) }))
@@ -47,7 +53,7 @@ class MasterModel {
 
 	async getClustersByBlockId(blockId: string): Promise<NamedEntity[]> {
 		try {
-			const rows = await executeQuery<{ id: string; name: string }>(
+			const rows = await sequelize.query<{ id: string; name: string }>(
 				`
 				SELECT
 					cm."clusterId"::varchar AS id,
@@ -56,7 +62,10 @@ class MasterModel {
 				WHERE cm."blockId"::varchar = $1
 				ORDER BY cm."clusterName"
 				`,
-				[{ name: 'blockId', type: sql.VarChar(30), value: String(blockId) }],
+				{
+					bind: [String(blockId)],
+					type: QueryTypes.SELECT,
+				},
 			);
 			return (rows || [])
 				.map((r) => ({ id: String(r.id), name: String(r.name) }))
