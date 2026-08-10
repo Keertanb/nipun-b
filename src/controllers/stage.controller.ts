@@ -42,6 +42,8 @@ class StageController {
 				description: req.body.description,
 				sortOrder: req.body.sortOrder,
 				stageType: req.body.stageType,
+				startDate: req.body.startDate,
+				endDate: req.body.endDate,
 			});
 			return res.handler.created(created, 'Stage created');
 		} catch (error) {

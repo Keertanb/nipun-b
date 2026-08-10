@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { REVIEW_SUBJECTS } from '../utils/constants';
 
+const dateOnly = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be YYYY-MM-DD');
 const stageType = z.enum(['assessment', 'intervention', 'summary']);
 const questionSubject = z.enum(['Gujarati', 'Maths', 'All']);
 
@@ -25,6 +26,8 @@ export const createStage = {
 		description: z.string().trim().max(2000).optional().default(''),
 		sortOrder: z.number().int().positive().optional(),
 		stageType: stageType.optional().default('assessment'),
+		startDate: dateOnly.nullable().optional(),
+		endDate: dateOnly.nullable().optional(),
 	}),
 };
 
@@ -46,6 +49,8 @@ export const updateStage = {
 			description: z.string().trim().max(2000).optional(),
 			sortOrder: z.number().int().positive().optional(),
 			stageType: stageType.optional(),
+			startDate: dateOnly.nullable().optional(),
+			endDate: dateOnly.nullable().optional(),
 		})
 		.refine((v) => Object.keys(v).length > 0, { message: 'At least one field is required' }),
 };

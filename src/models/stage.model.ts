@@ -1,5 +1,6 @@
 import { Op } from 'sequelize';
 import RoundStage from '../database/models/RoundStage.model';
+import ReviewRound from '../database/models/ReviewRound.model';
 import StageQuestion from '../database/models/StageQuestion.model';
 import TeacherStageProgress from '../database/models/TeacherStageProgress.model';
 import StageIntervention from '../database/models/StageIntervention.model';
@@ -14,6 +15,8 @@ export type CreateStageInput = {
 	description?: string;
 	sortOrder?: number;
 	stageType?: StageType;
+	startDate?: string | null;
+	endDate?: string | null;
 };
 
 export type UpdateStageInput = {
@@ -22,6 +25,8 @@ export type UpdateStageInput = {
 	description?: string;
 	sortOrder?: number;
 	stageType?: StageType;
+	startDate?: string | null;
+	endDate?: string | null;
 };
 
 export const DEFAULT_STAGES: Array<{
@@ -99,6 +104,8 @@ class StageModel {
 			description: input.description || '',
 			sortOrder,
 			stageType: input.stageType || 'assessment',
+			startDate: input.startDate ?? null,
+			endDate: input.endDate ?? null,
 		});
 	}
 
@@ -111,6 +118,8 @@ class StageModel {
 			...(input.description != null ? { description: input.description } : {}),
 			...(input.sortOrder != null ? { sortOrder: input.sortOrder } : {}),
 			...(input.stageType != null ? { stageType: input.stageType } : {}),
+			...(input.startDate !== undefined ? { startDate: input.startDate } : {}),
+			...(input.endDate !== undefined ? { endDate: input.endDate } : {}),
 		});
 		return stage;
 	}
@@ -140,6 +149,10 @@ class StageModel {
 		const existing = await this.listByRound(roundId);
 		if (existing.length) return existing;
 
+		const round = await ReviewRound.findByPk(roundId);
+		const startDate = round?.startDate ?? null;
+		const endDate = round?.endDate ?? null;
+
 		const created: RoundStage[] = [];
 		for (const def of DEFAULT_STAGES) {
 			const stage = await RoundStage.create({
@@ -149,6 +162,8 @@ class StageModel {
 				description: def.description,
 				sortOrder: def.sortOrder,
 				stageType: def.stageType,
+				startDate,
+				endDate,
 			});
 			created.push(stage);
 			if (def.code === 'midline') {
@@ -348,6 +363,8 @@ class StageModel {
 			description: stage.description || '',
 			sortOrder: stage.sortOrder,
 			stageType: stage.stageType,
+			startDate: stage.startDate || null,
+			endDate: stage.endDate || null,
 		};
 	}
 

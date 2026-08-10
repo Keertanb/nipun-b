@@ -46,6 +46,11 @@ class StageService {
 		try {
 			const stage = await stageModel.getByRoundAndId(roundId, stageId);
 			if (!stage) return null;
+			const nextStart = input.startDate !== undefined ? input.startDate : stage.startDate;
+			const nextEnd = input.endDate !== undefined ? input.endDate : stage.endDate;
+			if (nextStart && nextEnd && nextStart > nextEnd) {
+				throw Object.assign(new Error('startDate must be on or before endDate'), { status: 400 });
+			}
 			const updated = await stageModel.updateStage(stageId, input);
 			return updated ? stageModel.serializeStage(updated) : null;
 		} catch (error) {

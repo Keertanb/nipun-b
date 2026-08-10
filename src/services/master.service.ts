@@ -3,6 +3,7 @@ import https from 'https';
 import crypto from 'crypto';
 import config from '../config';
 import logger from '../utils/logger';
+import MasterModel from '../models/master.model';
 
 type NamedEntity = { id: string; name: string };
 
@@ -14,6 +15,8 @@ type SchoolListItem = {
 	villageId?: string | null;
 	raw?: unknown;
 };
+
+const masterModel = new MasterModel();
 
 const httpsAgent = new https.Agent({
 	rejectUnauthorized: false,
@@ -89,78 +92,33 @@ class MasterService {
 		return responseData;
 	}
 
+	/** Districts from district_master (direct query). */
 	async getAllDistricts(): Promise<NamedEntity[]> {
-		this.assertConfigured();
 		try {
-			const response = await axios.get(`${config.cts.url}/master/districts`, {
-				httpsAgent,
-				headers: this.headers(),
-				params: { academicYear: config.cts.academicYear },
-				timeout: 20000,
-			});
-
-			const rows = asArray(this.unwrapData(response.data));
-			const districts = rows
-				.map((item) => ({
-					id: pickId(item, ['id', 'value', 'districtId', 'DistrictId', 'districtid']),
-					name: pickName(item, ['name', 'districtName', 'DistrictName', 'district', 'label']),
-				}))
-				.filter((d) => d.id && d.name);
-
-			return sortByName(districts);
+			return sortByName(await masterModel.getAllDistricts());
 		} catch (error) {
-			logger.error({ message: 'Error fetching districts from CTS', error: (error as Error).message });
-			throw new Error('Unable to fetch districts from CTS API');
+			logger.error({ message: 'Error fetching districts from DB', error: (error as Error).message });
+			throw new Error('Unable to fetch districts');
 		}
 	}
 
+	/** Blocks from block_master (direct query). */
 	async getBlocksByDistrictId(districtId: string): Promise<NamedEntity[]> {
-		this.assertConfigured();
 		try {
-			const response = await axios.get(`${config.cts.url}/master/blocks-by-districtId`, {
-				httpsAgent,
-				headers: this.headers(),
-				params: { districtId, academicYear: config.cts.academicYear },
-				timeout: 20000,
-			});
-
-			const rows = asArray(this.unwrapData(response.data));
-			const blocks = rows
-				.map((item) => ({
-					id: pickId(item, ['id', 'value', 'blockId', 'BlockId', 'blockid']),
-					name: pickName(item, ['name', 'blockName', 'BlockName', 'block', 'label']),
-				}))
-				.filter((b) => b.id && b.name);
-
-			return sortByName(blocks);
+			return sortByName(await masterModel.getBlocksByDistrictId(districtId));
 		} catch (error) {
-			logger.error({ message: 'Error fetching blocks from CTS', error: (error as Error).message, districtId });
-			throw new Error('Unable to fetch blocks from CTS API');
+			logger.error({ message: 'Error fetching blocks from DB', error: (error as Error).message, districtId });
+			throw new Error('Unable to fetch blocks');
 		}
 	}
 
+	/** Clusters from cluster_master (direct query). */
 	async getClustersByBlockId(blockId: string): Promise<NamedEntity[]> {
-		this.assertConfigured();
 		try {
-			const response = await axios.get(`${config.cts.url}/master/clusters-by-blockId`, {
-				httpsAgent,
-				headers: this.headers(),
-				params: { blockId, academicYear: config.cts.academicYear },
-				timeout: 20000,
-			});
-
-			const rows = asArray(this.unwrapData(response.data));
-			const clusters = rows
-				.map((item) => ({
-					id: pickId(item, ['id', 'value', 'clusterId', 'ClusterId', 'clusterid']),
-					name: pickName(item, ['name', 'clusterName', 'ClusterName', 'cluster', 'label']),
-				}))
-				.filter((c) => c.id && c.name);
-
-			return sortByName(clusters);
+			return sortByName(await masterModel.getClustersByBlockId(blockId));
 		} catch (error) {
-			logger.error({ message: 'Error fetching clusters from CTS', error: (error as Error).message, blockId });
-			throw new Error('Unable to fetch clusters from CTS API');
+			logger.error({ message: 'Error fetching clusters from DB', error: (error as Error).message, blockId });
+			throw new Error('Unable to fetch clusters');
 		}
 	}
 

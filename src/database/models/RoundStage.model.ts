@@ -49,6 +49,14 @@ export class RoundStage extends Model {
 	@Column({ field: 'stage_type', type: DataType.ENUM('assessment', 'intervention', 'summary'), defaultValue: 'assessment' })
 	stageType!: 'assessment' | 'intervention' | 'summary';
 
+	@AllowNull(true)
+	@Column({ field: 'start_date', type: DataType.DATEONLY })
+	startDate!: string | null;
+
+	@AllowNull(true)
+	@Column({ field: 'end_date', type: DataType.DATEONLY })
+	endDate!: string | null;
+
 	@CreatedAt
 	@Column({ field: 'created_at', type: DataType.DATE })
 	createdAt!: Date;
