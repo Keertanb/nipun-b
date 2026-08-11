@@ -2,6 +2,8 @@ import { Op } from 'sequelize';
 import { StudentReview } from '../database/models/StudentReview.model';
 import { ReviewRating, ReviewSubject, REVIEW_SUBJECTS } from '../utils/constants';
 
+export type ReviewerRole = 'teacher' | 'verifier';
+
 export type UpsertReviewInput = {
 	studentId: string;
 	schoolId: string;
@@ -14,6 +16,7 @@ export type UpsertReviewInput = {
 	review: ReviewRating;
 	remarks: string;
 	reviewedAt: string;
+	reviewerRole?: ReviewerRole;
 };
 
 export type SubjectReviewSummary = {
@@ -26,6 +29,7 @@ export type SubjectReviewSummary = {
 
 class ReviewModel {
 	async upsertReview(input: UpsertReviewInput) {
+		const reviewerRole = input.reviewerRole || 'teacher';
 		const existing = await StudentReview.findOne({
 			where: {
 				studentId: input.studentId,
@@ -33,6 +37,7 @@ class ReviewModel {
 				roundId: input.roundId,
 				stageId: input.stageId,
 				subject: input.subject,
+				reviewerRole,
 			},
 		});
 
@@ -44,6 +49,7 @@ class ReviewModel {
 				review: input.review,
 				remarks: input.remarks,
 				reviewedAt: input.reviewedAt,
+				reviewerRole,
 			});
 			return existing;
 		}
@@ -60,15 +66,23 @@ class ReviewModel {
 			review: input.review,
 			remarks: input.remarks,
 			reviewedAt: input.reviewedAt,
+			reviewerRole,
 		});
 	}
 
-	async getReviewsForStudent(studentId: string, academicYear: string, roundId: number, stageId?: number | null) {
+	async getReviewsForStudent(
+		studentId: string,
+		academicYear: string,
+		roundId: number,
+		stageId?: number | null,
+		reviewerRole: ReviewerRole = 'teacher',
+	) {
 		return StudentReview.findAll({
 			where: {
 				studentId,
 				academicYear,
 				roundId,
+				reviewerRole,
 				...(stageId != null ? { stageId } : {}),
 			},
 			attributes: [
@@ -81,6 +95,7 @@ class ReviewModel {
 				'grade',
 				'roundId',
 				'stageId',
+				'reviewerRole',
 			],
 		});
 	}
@@ -90,6 +105,7 @@ class ReviewModel {
 		academicYear: string,
 		roundId: number,
 		stageId?: number | null,
+		reviewerRole: ReviewerRole = 'teacher',
 	) {
 		if (!studentIds.length || !roundId) return [];
 		return StudentReview.findAll({
@@ -97,6 +113,7 @@ class ReviewModel {
 				studentId: { [Op.in]: studentIds },
 				academicYear,
 				roundId,
+				reviewerRole,
 				...(stageId != null ? { stageId } : {}),
 			},
 			attributes: [
@@ -109,6 +126,7 @@ class ReviewModel {
 				'grade',
 				'roundId',
 				'stageId',
+				'reviewerRole',
 			],
 		});
 	}

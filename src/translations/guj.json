@@ -26,7 +26,20 @@
 		"roleIdRequired": "રોલ આઈડી જરૂરી છે",
 		"userIdRequired": "યુઝર આઈડી જરૂરી છે",
 		"sessionExpired": "સત્ર સમાપ્ત થયું, કૃપા કરીને ફરીથી લૉગિન કરો",
-		"registryNotConfigured": "રજિસ્ટ્રી API ગોઠવાયેલ નથી"
+		"registryNotConfigured": "રજિસ્ટ્રી API ગોઠવાયેલ નથી",
+		"verifierNotFound": "વેરિફાયર મળ્યા નથી",
+		"verifierInvalidCredentials": "અમાન્ય ક્લસ્ટર આઈડી અથવા પાસવર્ડ",
+		"verifierEmailNotFound": "આ ઈમેલ માટે વેરિફાયર મળ્યા નથી",
+		"otpSent": "ઓટીપી સફળતાપૂર્વક મોકલાયો",
+		"otpVerified": "ઓટીપી સફળતાપૂર્વક ચકાસાયો",
+		"otpExpired": "ઓટીપીની મુદત પૂરી થઈ. કૃપા કરીને નવો મંગાવો",
+		"otpInvalid": "અમાન્ય ઓટીપી",
+		"otpMissing": "કૃપા કરીને પહેલા ઓટીપી મોકલો",
+		"otpLocked": "ઘણા અમાન્ય પ્રયાસો. નવો ઓટીપી મંગાવો",
+		"resetTokenInvalid": "રીસેટ સત્ર સમાપ્ત. કૃપા કરીને ઓટીપી ફરી ચકાસો",
+		"passwordTooShort": "પાસવર્ડ ઓછામાં ઓછા 6 અક્ષરનો હોવો જોઈએ",
+		"passwordResetSuccessful": "પાસવર્ડ સફળતાપૂર્વક અપડેટ થયો",
+		"emailRequired": "માન્ય ઈમેલ જરૂરી છે"
 	},
 	"teacher": {
 		"profileFetchedSuccessfully": "પ્રોફાઇલ સફળતાપૂર્વક મેળવી",

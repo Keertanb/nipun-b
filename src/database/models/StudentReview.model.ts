@@ -19,6 +19,11 @@ export class StudentReview extends Model {
 	@Column({ field: 'teacher_id', type: DataType.STRING(50) })
 	teacherId!: string;
 
+	/** 'teacher' | 'verifier' — keeps external verifier reviews separate from teacher reviews */
+	@AllowNull(false)
+	@Column({ field: 'reviewer_role', type: DataType.STRING(20), defaultValue: 'teacher' })
+	reviewerRole!: string;
+
 	@AllowNull(false)
 	@Column({ field: 'academic_year', type: DataType.STRING(10) })
 	academicYear!: string;

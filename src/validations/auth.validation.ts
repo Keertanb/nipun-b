@@ -22,4 +22,42 @@ export const login = {
 	}),
 };
 
+export const verifierLogin = {
+	body: z.object({
+		clusterId: z
+			.string()
+			.trim()
+			.min(1, 'Cluster ID is required')
+			.regex(/^\d{1,20}$/, 'Cluster ID must be numeric'),
+		password: z.string().min(1, 'Password is required'),
+	}),
+};
+
+export const verifierSendOtp = {
+	body: z.object({
+		email: z.string().trim().email('Valid email is required'),
+	}),
+};
+
+export const verifierVerifyOtp = {
+	body: z.object({
+		email: z.string().trim().email('Valid email is required'),
+		otp: z
+			.string()
+			.trim()
+			.regex(/^\d{6}$/, 'OTP must be 6 digits'),
+	}),
+};
+
+export const verifierResetPassword = {
+	body: z.object({
+		resetToken: z.string().trim().min(1, 'Reset token is required'),
+		newPassword: z.string().min(6, 'Password must be at least 6 characters'),
+	}),
+};
+
 export type LoginRequest = z.infer<typeof login.body>;
+export type VerifierLoginRequest = z.infer<typeof verifierLogin.body>;
+export type VerifierSendOtpRequest = z.infer<typeof verifierSendOtp.body>;
+export type VerifierVerifyOtpRequest = z.infer<typeof verifierVerifyOtp.body>;
+export type VerifierResetPasswordRequest = z.infer<typeof verifierResetPassword.body>;

@@ -23,11 +23,15 @@ const validateToken = async (req: Request, res: Response, next: NextFunction) =>
 
 		if (!isSessionValid) return res.handler.unauthorized({}, req.t('auth.sessionExpired'));
 
-		if (userId !== payload.userId) return res.handler.unauthorized({}, req.t('auth.sessionExpired'));
+		if (String(userId) !== String(payload.userId)) {
+			return res.handler.unauthorized({}, req.t('auth.sessionExpired'));
+		}
 
 		req.user = {
-			userId: payload.userId,
-			roleId: parseInt(roleId),
+			userId: String(payload.userId),
+			roleId: parseInt(roleId, 10),
+			userType: payload.userType != null ? String(payload.userType) : String(roleId),
+			schoolCode: payload.schoolCode != null ? String(payload.schoolCode) : undefined,
 		};
 
 		return next();

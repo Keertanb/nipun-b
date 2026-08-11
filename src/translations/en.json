@@ -26,7 +26,20 @@
 		"roleIdRequired": "Role ID is required",
 		"userIdRequired": "User ID is required",
 		"sessionExpired": "Session expired, please log in again",
-		"registryNotConfigured": "Registry API is not configured"
+		"registryNotConfigured": "Registry API is not configured",
+		"verifierNotFound": "Verifier not found",
+		"verifierInvalidCredentials": "Invalid cluster ID or password",
+		"verifierEmailNotFound": "No verifier found for this email",
+		"otpSent": "OTP sent successfully",
+		"otpVerified": "OTP verified successfully",
+		"otpExpired": "OTP has expired. Please request a new one",
+		"otpInvalid": "Invalid OTP",
+		"otpMissing": "Please send an OTP first",
+		"otpLocked": "Too many invalid attempts. Request a new OTP",
+		"resetTokenInvalid": "Reset session expired. Please verify OTP again",
+		"passwordTooShort": "Password must be at least 6 characters",
+		"passwordResetSuccessful": "Password updated successfully",
+		"emailRequired": "Valid email is required"
 	},
 	"teacher": {
 		"profileFetchedSuccessfully": "Profile fetched successfully",

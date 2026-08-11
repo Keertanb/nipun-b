@@ -1,6 +1,11 @@
 export const ROLE_TYPES = {
 	TEACHER: '1',
+	VERIFIER: '2',
 };
+
+/** External verifier sample limits per standard (Balvatika–Std 5). */
+export const VERIFIER_MIN_PER_GRADE = 2;
+export const VERIFIER_MAX_PER_GRADE = 10;
 
 /** App grade codes used in API query params */
 export const GRADES = ['B', '1', '2', '3', '4', '5'] as const;

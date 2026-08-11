@@ -3,20 +3,87 @@ import RegistryService from '../services/registry.service';
 import ReviewService from '../services/review.service';
 import RoundService from '../services/round.service';
 import StageService from '../services/stage.service';
+import VerifierModel from '../models/verifier.model';
 import logger from '../utils/logger';
 import config from '../config';
 import { STATUS_CODES } from '../utils/statusCodes';
 import { GetStudentsQuery } from '../validations/teacher.validation';
 import { SaveInterventionBody, TeacherCreateQuestionBody } from '../validations/stage.validation';
-import { GRADES, GRADE_LABEL, REGISTRY_GRADE_CODE, registryGradeToApp } from '../utils/constants';
+import {
+	GRADES,
+	GRADE_LABEL,
+	REGISTRY_GRADE_CODE,
+	registryGradeToApp,
+	ROLE_TYPES,
+	VERIFIER_MAX_PER_GRADE,
+	VERIFIER_MIN_PER_GRADE,
+	Grade,
+} from '../utils/constants';
 import { StudentResponseType } from '../types/registry.types';
+import { ReviewerRole } from '../models/review.model';
 
 const registryService = new RegistryService();
 const reviewService = new ReviewService();
 const roundService = new RoundService();
 const stageService = new StageService();
+const verifierModel = new VerifierModel();
 
-async function resolveTeacherSchoolStudents(teacherId: string) {
+function isVerifierUser(user: Request['user']) {
+	return (
+		String(user?.userType) === ROLE_TYPES.VERIFIER ||
+		Number(user?.roleId) === Number(ROLE_TYPES.VERIFIER)
+	);
+}
+
+async function resolveSchoolStudents(req: { user: Request['user'] }) {
+	if (isVerifierUser(req.user)) {
+		let schoolId = req.user.schoolCode;
+		let displayName = `Verifier ${req.user.userId}`;
+		if (!schoolId) {
+			const row = await verifierModel.findByClusterId(req.user.userId);
+			schoolId = row ? String(row.schoolId) : undefined;
+			displayName = row?.clusterName || displayName;
+		} else {
+			const row = await verifierModel.findByClusterId(req.user.userId);
+			if (row?.clusterName) displayName = row.clusterName;
+		}
+		if (!schoolId) {
+			return {
+				teacherData: {
+					teachercode: req.user.userId,
+					teachername: displayName,
+					schoolid: '',
+					designation: 'External Verifier',
+				},
+				students: [] as StudentResponseType[],
+				reviewerRole: 'verifier' as ReviewerRole,
+			};
+		}
+
+		let students: StudentResponseType[] = [];
+		try {
+			students = await registryService.getStudentsBySchoolAndGrades(
+				schoolId,
+				GRADES.map((g) => REGISTRY_GRADE_CODE[g]),
+			);
+		} catch (error) {
+			logger.warn({ message: 'Verifier students fetch failed', error: (error as Error).message });
+			students = [];
+		}
+
+		return {
+			teacherData: {
+				teachercode: req.user.userId,
+				teachername: displayName,
+				schoolid: schoolId,
+				designation: 'External Verifier',
+			},
+			students: students.filter((s) => s.is_active),
+			reviewerRole: 'verifier' as ReviewerRole,
+		};
+	}
+
+	const teacherId = req.user.userId;
 	let teacherData = null;
 	try {
 		teacherData = await registryService.getTeacherByTeacherId(teacherId);
@@ -30,8 +97,10 @@ async function resolveTeacherSchoolStudents(teacherId: string) {
 				teachercode: teacherId,
 				teachername: `Teacher ${teacherId}`,
 				schoolid: `DEMO-${teacherId}`,
+				designation: 'Teacher',
 			},
 			students: [] as StudentResponseType[],
+			reviewerRole: 'teacher' as ReviewerRole,
 		};
 	}
 
@@ -49,23 +118,17 @@ async function resolveTeacherSchoolStudents(teacherId: string) {
 	return {
 		teacherData,
 		students: students.filter((s) => s.is_active),
+		reviewerRole: 'teacher' as ReviewerRole,
 	};
 }
 
 class TeacherController {
 	async profile(req: Request, res: Response, next: NextFunction) {
 		try {
-			const teacherId = req.user.userId;
-			let teacherData = null;
+			const { teacherData, reviewerRole } = await resolveSchoolStudents(req);
 			let schoolData = null;
 
-			try {
-				teacherData = await registryService.getTeacherByTeacherId(teacherId);
-			} catch (error) {
-				logger.warn({ message: 'Profile registry lookup failed', error: (error as Error).message });
-			}
-
-			if (teacherData?.teachercode) {
+			if (teacherData?.schoolid) {
 				try {
 					schoolData = await registryService.getSchoolDetailsById(teacherData.schoolid);
 				} catch (error) {
@@ -73,18 +136,10 @@ class TeacherController {
 				}
 			}
 
-			if (!teacherData?.teachercode) {
-				teacherData = {
-					teachercode: teacherId,
-					teachername: `Teacher ${teacherId}`,
-					designation: 'Teacher',
-					schoolid: `DEMO-${teacherId}`,
-				};
-			}
 			if (!schoolData?.schoolid) {
 				schoolData = {
 					schoolid: teacherData.schoolid,
-					school: 'Demo School',
+					school: reviewerRole === 'verifier' ? teacherData.teachername : 'Demo School',
 					village: '—',
 					block: '—',
 					district: '—',
@@ -100,7 +155,7 @@ class TeacherController {
 					teacher: {
 						teachercode: teacherData.teachercode,
 						teachername: teacherData.teachername,
-						designation: teacherData.designation,
+						designation: teacherData.designation || (reviewerRole === 'verifier' ? 'External Verifier' : 'Teacher'),
 						schoolid: teacherData.schoolid,
 					},
 					school: {
@@ -114,6 +169,7 @@ class TeacherController {
 						mobileprincipal: schoolData.mobileprincipal,
 						udise: schoolData.udise || schoolData.schoolid,
 					},
+					role: reviewerRole,
 				},
 				req.t('teacher.profileFetchedSuccessfully'),
 			);
@@ -125,9 +181,7 @@ class TeacherController {
 	async getStudents(req: Request<unknown, unknown, unknown, GetStudentsQuery>, res: Response, next: NextFunction) {
 		try {
 			const { grade } = req.query;
-			const teacherId = req.user.userId;
-
-			const { teacherData, students } = await resolveTeacherSchoolStudents(teacherId);
+			const { teacherData, students, reviewerRole } = await resolveSchoolStudents(req);
 			const filtered = grade
 				? students.filter((s) => registryGradeToApp(s.grade) === grade)
 				: students;
@@ -136,8 +190,12 @@ class TeacherController {
 			const roundId = current.round ? Number(current.round.id) : 0;
 
 			let activeStage = null;
-			if (roundId) {
-				activeStage = await stageService.getActiveStageForTeacher(roundId, teacherId, teacherData.schoolid);
+			if (roundId && teacherData.schoolid) {
+				activeStage = await stageService.getActiveStageForTeacher(
+					roundId,
+					teacherData.teachercode,
+					teacherData.schoolid,
+				);
 			}
 
 			const reviews =
@@ -147,9 +205,19 @@ class TeacherController {
 							config.academicYear,
 							roundId,
 							activeStage.id,
+							reviewerRole,
 						)
 					: [];
 			const reviewByStudent = reviewService.groupByStudent(reviews);
+
+			const completedByGrade: Partial<Record<Grade, number>> = {};
+			for (const s of filtered) {
+				const appGrade = registryGradeToApp(s.grade);
+				if (!appGrade) continue;
+				if (reviewByStudent.get(s.studentid)?.isDone) {
+					completedByGrade[appGrade] = (completedByGrade[appGrade] || 0) + 1;
+				}
+			}
 
 			const classesPresent = new Set<string>();
 
@@ -159,6 +227,14 @@ class TeacherController {
 				if (appGrade) classesPresent.add(GRADE_LABEL[appGrade]);
 
 				const local = reviewByStudent.get(s.studentid);
+				// For verifiers, only their own reviews (reviewer_role=verifier) are loaded —
+				// teacher reviews are never included, so the form starts blank until they submit.
+				const doneInGrade = appGrade ? completedByGrade[appGrade] || 0 : 0;
+				const reviewLocked =
+					reviewerRole === 'verifier' &&
+					Boolean(appGrade) &&
+					!local?.isDone &&
+					doneInGrade >= VERIFIER_MAX_PER_GRADE;
 
 				return {
 					...s,
@@ -174,8 +250,22 @@ class TeacherController {
 					reviewDate: local?.reviewDate ?? null,
 					isDone: Boolean(local?.isDone),
 					reviewedByTeacherId: local?.reviewedByTeacherId ?? null,
+					reviewLocked,
+					reviewerRole,
 				};
 			});
+
+			const gradeQuota =
+				reviewerRole === 'verifier'
+					? GRADES.map((g) => ({
+							grade: g,
+							label: GRADE_LABEL[g],
+							completed: completedByGrade[g] || 0,
+							min: VERIFIER_MIN_PER_GRADE,
+							max: VERIFIER_MAX_PER_GRADE,
+							locked: (completedByGrade[g] || 0) >= VERIFIER_MAX_PER_GRADE,
+						}))
+					: null;
 
 			return res.handler.success(
 				{
@@ -192,6 +282,12 @@ class TeacherController {
 					round: current.serialized,
 					canSubmit: current.canSubmit,
 					stage: activeStage,
+					role: reviewerRole,
+					gradeQuota,
+					verifierLimits:
+						reviewerRole === 'verifier'
+							? { minPerGrade: VERIFIER_MIN_PER_GRADE, maxPerGrade: VERIFIER_MAX_PER_GRADE }
+							: null,
 				},
 				req.t('teacher.studentsFetchedSuccessfully'),
 			);
@@ -202,8 +298,7 @@ class TeacherController {
 
 	async stageWorkspace(req: Request, res: Response, next: NextFunction) {
 		try {
-			const teacherId = req.user.userId;
-			const { teacherData, students } = await resolveTeacherSchoolStudents(teacherId);
+			const { teacherData, students } = await resolveSchoolStudents(req);
 			const current = await roundService.getCurrentRoundForReviews(config.academicYear);
 			if (!current.round) {
 				return res.handler.success({
@@ -216,7 +311,7 @@ class TeacherController {
 
 			const workspace = await stageService.getTeacherWorkspace({
 				roundId: Number(current.round.id),
-				teacherId,
+				teacherId: teacherData.teachercode,
 				schoolId: teacherData.schoolid,
 				studentIds: students.map((s) => s.studentid),
 				academicYear: config.academicYear,
@@ -234,11 +329,10 @@ class TeacherController {
 
 	async completeStage(req: Request, res: Response, next: NextFunction) {
 		try {
-			const teacherId = req.user.userId;
 			const stageId = Number(req.params.stageId);
 			if (!Number.isFinite(stageId)) return res.handler.badRequest({}, 'Invalid stageId');
 
-			const { teacherData, students } = await resolveTeacherSchoolStudents(teacherId);
+			const { teacherData, students } = await resolveSchoolStudents(req);
 			const current = await roundService.getCurrentRoundForReviews(config.academicYear);
 			if (!current.canSubmit || !current.round) {
 				return res.handler.preconditionFailed({}, req.t('review.roundSubmissionOver'));
@@ -247,7 +341,7 @@ class TeacherController {
 			const workspace = await stageService.completeTeacherStage({
 				roundId: Number(current.round.id),
 				stageId,
-				teacherId,
+				teacherId: teacherData.teachercode,
 				schoolId: teacherData.schoolid,
 				studentIds: students.map((s) => s.studentid),
 				academicYear: config.academicYear,
@@ -287,14 +381,13 @@ class TeacherController {
 
 	async saveIntervention(req: Request<{ stageId: string }, unknown, SaveInterventionBody>, res: Response, next: NextFunction) {
 		try {
-			const teacherId = req.user.userId;
 			const stageId = Number(req.params.stageId);
 			if (!Number.isFinite(stageId)) return res.handler.badRequest({}, 'Invalid stageId');
 
-			const { teacherData } = await resolveTeacherSchoolStudents(teacherId);
+			const { teacherData } = await resolveSchoolStudents(req);
 			const saved = await stageService.saveIntervention({
 				stageId,
-				teacherId,
+				teacherId: teacherData.teachercode,
 				schoolId: teacherData.schoolid,
 				studentId: req.body.studentId,
 				subject: req.body.subject,

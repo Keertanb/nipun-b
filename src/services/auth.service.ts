@@ -1,14 +1,23 @@
 import jwt from 'jsonwebtoken';
 import config from '../config';
 import AuthModel from '../models/auth.model';
+import VerifierModel from '../models/verifier.model';
 import { getSwiftChatUserDetails } from '../utils/swiftChat';
 import { normalizeMobile } from '../utils/mobile';
 import logger from '../utils/logger';
 import { ROLE_TYPES } from '../utils/constants';
 import RegistryService from './registry.service';
 import { SchoolDetailsResponseType, TeacherResponseType } from '../types/registry.types';
+import {
+	consumePasswordResetToken,
+	generateSixDigitOtp,
+	issuePasswordResetToken,
+	saveVerifierOtp,
+	verifyStoredVerifierOtp,
+} from '../utils/verifierOtpStore';
 
 const authModel = new AuthModel();
+const verifierModel = new VerifierModel();
 const registryService = new RegistryService();
 
 function httpError(message: string, status: number, code?: string) {
@@ -194,7 +203,7 @@ class AuthService {
 
 		return {
 			userDetails: {
-				userId: teacherData.teachercode,
+				userId: String(teacherData.teachercode),
 				roleId: parseInt(ROLE_TYPES.TEACHER, 10),
 			},
 			sessionToken: token,
@@ -217,6 +226,168 @@ class AuthService {
 				udise: schoolData.udise || schoolData.schoolid,
 			},
 			swiftChatUserMobile,
+		};
+	}
+
+	/**
+	 * External verifier login: clusterId + password from user_master.
+	 * Assigns the linked school for student reviews (separate from teacher reviews).
+	 */
+	async loginWithVerifier(input: { clusterId: string; password: string; ipAddress: string }) {
+		const clusterId = String(input.clusterId).trim();
+		const password = String(input.password || '');
+
+		if (!clusterId) throw httpError('Cluster ID is required', 400, 'CLUSTER_REQUIRED');
+		if (!password) throw httpError('Password is required', 400, 'PASSWORD_REQUIRED');
+
+		const row = await verifierModel.findByClusterId(clusterId);
+
+		if (!row?.clusterId) {
+			throw httpError('Verifier not found', 404, 'VERIFIER_NOT_FOUND');
+		}
+
+		if (String(row.password) !== password) {
+			throw httpError('Invalid cluster ID or password', 401, 'VERIFIER_INVALID_CREDENTIALS');
+		}
+
+		const schoolId = String(row.schoolId);
+		let schoolData: SchoolDetailsResponseType | null = null;
+		try {
+			schoolData = await registryService.getSchoolDetailsById(schoolId);
+		} catch (error) {
+			logger.warn({ message: 'Verifier school lookup failed', error: (error as Error).message, schoolId });
+		}
+
+		const now = Date.now();
+		const token: string = jwt.sign(
+			{
+				userId: String(row.clusterId),
+				userType: ROLE_TYPES.VERIFIER,
+				clusterId: String(row.clusterId),
+				schoolCode: schoolId,
+				dateTime: now,
+			},
+			config.jwt.secret,
+			{ expiresIn: config.jwt.expiresIn },
+		);
+
+		const session = await this.createUserSession(
+			String(row.clusterId),
+			token,
+			input.ipAddress,
+			schoolId,
+			ROLE_TYPES.VERIFIER,
+		);
+
+		if (!session?.sessionId) {
+			throw httpError('Session creation failed', 500, 'SESSION_FAILED');
+		}
+
+		return {
+			userDetails: {
+				userId: String(row.clusterId),
+				roleId: parseInt(ROLE_TYPES.VERIFIER, 10),
+			},
+			sessionToken: token,
+			verifier: {
+				clusterId: String(row.clusterId),
+				clusterName: row.clusterName || '',
+				schoolId,
+				schoolName: row.schoolName || schoolData?.school || '',
+				districtId: row.districtId,
+				districtName: row.districtName || schoolData?.district || '',
+				blockId: row.blockId,
+				blockName: row.blockName || schoolData?.block || '',
+			},
+			school: {
+				schoolid: schoolId,
+				school: row.schoolName || schoolData?.school || 'School',
+				village: schoolData?.village || '',
+				block: row.blockName || schoolData?.block || '',
+				district: row.districtName || schoolData?.district || '',
+				cluster: row.clusterName || schoolData?.cluster || '',
+				nameprincipal: schoolData?.nameprincipal || '—',
+				mobileprincipal: schoolData?.mobileprincipal || '—',
+				udise: schoolData?.udise || schoolId,
+			},
+			teacher: {
+				teachercode: String(row.clusterId),
+				teachername: row.clusterName || `Verifier ${row.clusterId}`,
+				designation: 'External Verifier',
+				schoolid: schoolId,
+				mobile: '',
+			},
+		};
+	}
+
+	async sendVerifierPasswordOtp(email: string) {
+		const normalized = String(email || '').trim().toLowerCase();
+		if (!normalized || !normalized.includes('@')) {
+			throw httpError('Valid email is required', 400, 'EMAIL_REQUIRED');
+		}
+
+		const row = await verifierModel.findByEmail(normalized);
+		if (!row?.clusterId) {
+			throw httpError('No verifier found for this email', 404, 'VERIFIER_EMAIL_NOT_FOUND');
+		}
+
+		const otp = generateSixDigitOtp();
+		saveVerifierOtp(normalized, String(row.clusterId), otp);
+
+		// No SMTP configured yet — log OTP for testing / ops
+		logger.info({
+			message: 'Verifier password reset OTP generated',
+			email: normalized,
+			clusterId: String(row.clusterId),
+			otp,
+		});
+
+		return {
+			email: normalized,
+			expiresInSeconds: 600,
+			// Dev aid when not production
+			...(config.environment !== 'production' ? { debugOtp: otp } : {}),
+		};
+	}
+
+	async verifyVerifierPasswordOtp(email: string, otp: string) {
+		const normalized = String(email || '').trim().toLowerCase();
+		const result = verifyStoredVerifierOtp(normalized, otp);
+		if (!result.ok) {
+			if (result.reason === 'expired') throw httpError('OTP has expired. Please request a new one.', 400, 'OTP_EXPIRED');
+			if (result.reason === 'locked') throw httpError('Too many invalid attempts. Request a new OTP.', 400, 'OTP_LOCKED');
+			if (result.reason === 'missing') throw httpError('Please send an OTP first.', 400, 'OTP_MISSING');
+			throw httpError('Invalid OTP', 400, 'OTP_INVALID');
+		}
+
+		const resetToken = issuePasswordResetToken(normalized, result.clusterId);
+		return {
+			email: normalized,
+			resetToken,
+			verified: true,
+		};
+	}
+
+	async resetVerifierPassword(resetToken: string, newPassword: string) {
+		const password = String(newPassword || '');
+		if (password.length < 6) {
+			throw httpError('Password must be at least 6 characters', 400, 'PASSWORD_TOO_SHORT');
+		}
+
+		const entry = consumePasswordResetToken(resetToken);
+		if (!entry) {
+			throw httpError('Reset session expired. Please verify OTP again.', 400, 'RESET_TOKEN_INVALID');
+		}
+
+		const updated = await verifierModel.updatePassword(entry.clusterId, password);
+		if (!updated) {
+			throw httpError('Verifier not found', 404, 'VERIFIER_NOT_FOUND');
+		}
+
+		return {
+			clusterId: entry.clusterId,
+			email: entry.email,
+			updated: true,
 		};
 	}
 }

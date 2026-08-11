@@ -1,4 +1,4 @@
-import ReviewModel, { UpsertReviewInput } from '../models/review.model';
+import ReviewModel, { ReviewerRole, UpsertReviewInput } from '../models/review.model';
 import logger from '../utils/logger';
 
 const reviewModel = new ReviewModel();
@@ -21,9 +21,15 @@ class ReviewService {
 		return saved;
 	}
 
-	async getReviewsForStudent(studentId: string, academicYear: string, roundId: number, stageId?: number | null) {
+	async getReviewsForStudent(
+		studentId: string,
+		academicYear: string,
+		roundId: number,
+		stageId?: number | null,
+		reviewerRole: ReviewerRole = 'teacher',
+	) {
 		try {
-			return await reviewModel.getReviewsForStudent(studentId, academicYear, roundId, stageId);
+			return await reviewModel.getReviewsForStudent(studentId, academicYear, roundId, stageId, reviewerRole);
 		} catch (error) {
 			logger.error({ message: 'Error in getReviewsForStudent service:', error: (error as Error).message });
 			throw error;
@@ -35,9 +41,10 @@ class ReviewService {
 		academicYear: string,
 		roundId: number,
 		stageId?: number | null,
+		reviewerRole: ReviewerRole = 'teacher',
 	) {
 		try {
-			return await reviewModel.getReviewsByStudentIds(studentIds, academicYear, roundId, stageId);
+			return await reviewModel.getReviewsByStudentIds(studentIds, academicYear, roundId, stageId, reviewerRole);
 		} catch (error) {
 			logger.error({ message: 'Error in getReviewsByStudentIds service:', error: (error as Error).message });
 			throw error;
