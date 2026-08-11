@@ -1,8 +1,4 @@
-import StageModel, {
-	CreateStageInput,
-	UpdateStageInput,
-	SUGGESTED_ACTIONS,
-} from '../models/stage.model';
+import StageModel, { CreateStageInput, UpdateStageInput, SUGGESTED_ACTIONS } from '../models/stage.model';
 import ReviewModel from '../models/review.model';
 import ReviewRound from '../database/models/ReviewRound.model';
 import { StudentReview } from '../database/models/StudentReview.model';
@@ -11,6 +7,21 @@ import logger from '../utils/logger';
 
 const stageModel = new StageModel();
 const reviewModel = new ReviewModel();
+
+function todayDateOnlyIST(): string {
+	return new Intl.DateTimeFormat('en-CA', {
+		timeZone: 'Asia/Kolkata',
+		year: 'numeric',
+		month: '2-digit',
+		day: '2-digit',
+	}).format(new Date());
+}
+
+/** Next stage opens only when its startDate is set and on/before today (IST). */
+function hasStageStarted(startDate: string | null | undefined): boolean {
+	if (!startDate) return false;
+	return String(startDate) <= todayDateOnlyIST();
+}
 
 class StageService {
 	async listStages(roundId: number) {
@@ -196,13 +207,7 @@ class StageService {
 		};
 	}
 
-	async getTeacherWorkspace(input: {
-		roundId: number;
-		teacherId: string;
-		schoolId: string;
-		studentIds: string[];
-		academicYear: string;
-	}) {
+	async getTeacherWorkspace(input: { roundId: number; teacherId: string; schoolId: string; studentIds: string[]; academicYear: string }) {
 		try {
 			return await this.buildTeacherWorkspace(input);
 		} catch (error) {
@@ -272,7 +277,11 @@ class StageService {
 
 		const previousAssessment = [...stages]
 			.reverse()
-			.find((s) => Number(s.sortOrder) < active.sortOrder && (s.stageType === 'assessment' || s.stageType === 'intervention' || s.stageType === 'summary'));
+			.find(
+				(s) =>
+					Number(s.sortOrder) < active.sortOrder &&
+					(s.stageType === 'assessment' || s.stageType === 'intervention' || s.stageType === 'summary'),
+			);
 
 		let levelCounts = { Bad: 0, Average: 0, Good: 0, total: 0 };
 		let needsSupport: Array<{
@@ -412,17 +421,24 @@ class StageService {
 		return stageModel.serializeIntervention(row);
 	}
 
-	async getActiveStageForTeacher(roundId: number, teacherId: string, schoolId: string) {
+	async getCurrentReviewStage(roundId: number) {
 		await stageModel.seedDefaultStages(roundId);
 		const stages = await stageModel.listByRound(roundId);
-		const progress = await stageModel.ensureTeacherProgress(roundId, teacherId, schoolId);
-		const activeProgress = progress.find((p) => p.status === 'active');
-		if (!activeProgress) {
-			const last = stages[stages.length - 1];
-			return last ? stageModel.serializeStage(last) : null;
+		if (!stages.length) return null;
+
+		let current = stages[0];
+		for (let i = 1; i < stages.length; i++) {
+			if (hasStageStarted(stages[i].startDate)) {
+				current = stages[i];
+			} else {
+				break;
+			}
 		}
-		const stage = stages.find((s) => Number(s.id) === Number(activeProgress.stageId));
-		return stage ? stageModel.serializeStage(stage) : null;
+		return stageModel.serializeStage(current);
+	}
+
+	async getActiveStageForTeacher(roundId: number, teacherId: string, schoolId: string) {
+		return this.getCurrentReviewStage(roundId);
 	}
 }
 
