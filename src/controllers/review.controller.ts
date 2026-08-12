@@ -126,12 +126,12 @@ class ReviewController {
 					'verifier',
 				);
 				const groupedPeers = reviewService.groupByStudent(existingRows);
-				const alreadyDone = Boolean(groupedPeers.get(studentId)?.isDone);
 				const completedInGrade = peerIds.filter((id) => groupedPeers.get(id)?.isDone).length;
 
-				if (!alreadyDone && completedInGrade >= VERIFIER_MAX_PER_GRADE) {
+				// At max: block new reviews and updates to existing verifier responses in this grade
+				if (completedInGrade >= VERIFIER_MAX_PER_GRADE) {
 					const err = new Error(
-						`External verifier can review at most ${VERIFIER_MAX_PER_GRADE} students in ${GRADE_LABEL[appGrade]}`,
+						`External verifier reviews are locked after ${VERIFIER_MAX_PER_GRADE} students in ${GRADE_LABEL[appGrade]}`,
 					) as Error & { status: number };
 					err.status = 403;
 					throw err;

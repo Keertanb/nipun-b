@@ -230,10 +230,11 @@ class TeacherController {
 				// For verifiers, only their own reviews (reviewer_role=verifier) are loaded —
 				// teacher reviews are never included, so the form starts blank until they submit.
 				const doneInGrade = appGrade ? completedByGrade[appGrade] || 0 : 0;
+				// Once max per grade is reached, lock pending peers AND already-submitted
+				// verifier reviews (no further edits). Teachers are unaffected.
 				const reviewLocked =
 					reviewerRole === 'verifier' &&
 					Boolean(appGrade) &&
-					!local?.isDone &&
 					doneInGrade >= VERIFIER_MAX_PER_GRADE;
 
 				return {
