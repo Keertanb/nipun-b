@@ -1,5 +1,6 @@
 import { NextFunction, Request, Response } from 'express';
 import MasterService from '../services/master.service';
+import AnalyticsService from '../services/analytics.service';
 import RegistryService from '../services/registry.service';
 import ReviewService from '../services/review.service';
 import RoundService from '../services/round.service';
@@ -11,9 +12,11 @@ import {
 	GetClustersQuery,
 	GetSchoolsQuery,
 	GetSchoolStudentsParams,
+	GetSchoolReviewStatusQuery,
 } from '../validations/master.validation';
 
 const masterService = new MasterService();
+const analyticsService = new AnalyticsService();
 const registryService = new RegistryService();
 const reviewService = new ReviewService();
 const roundService = new RoundService();
@@ -57,6 +60,24 @@ class MasterController {
 				villageId: villageId || null,
 			});
 			return res.handler.success(schools);
+		} catch (error) {
+			return next(error);
+		}
+	}
+
+	async getSchoolReviewStatus(
+		req: Request<unknown, unknown, unknown, GetSchoolReviewStatusQuery>,
+		res: Response,
+		next: NextFunction,
+	) {
+		try {
+			const { districtId, blockId, clusterId } = req.query;
+			const summary = await analyticsService.getSchoolReviewStatusSummary({
+				districtId,
+				blockId: blockId || null,
+				clusterId: clusterId || null,
+			});
+			return res.handler.success(summary);
 		} catch (error) {
 			return next(error);
 		}
