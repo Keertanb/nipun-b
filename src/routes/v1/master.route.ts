@@ -10,6 +10,11 @@ router.get('/districts', masterController.getAllDistricts);
 router.get('/blocks-by-districtId', validateZodSchema(masterValidation.getBlocksByDistrictId), masterController.getBlocksByDistrictId);
 router.get('/clusters-by-blockId', validateZodSchema(masterValidation.getClustersByBlockId), masterController.getClustersByBlockId);
 router.get('/schools', validateZodSchema(masterValidation.getSchools), masterController.getSchools);
+router.get(
+	'/school-review-status',
+	validateZodSchema(masterValidation.getSchoolReviewStatus),
+	masterController.getSchoolReviewStatus,
+);
 router.get('/schools/:schoolId', masterController.getSchoolById);
 router.get('/schools/:schoolId/students', validateZodSchema(masterValidation.getSchoolStudents), masterController.getSchoolStudents);
 
