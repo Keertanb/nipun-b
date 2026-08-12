@@ -12,9 +12,8 @@ import {
 	consumePasswordResetToken,
 	generateSixDigitOtp,
 	issuePasswordResetToken,
-	saveVerifierOtp,
-	verifyStoredVerifierOtp,
 } from '../utils/verifierOtpStore';
+import emailService from './email.service';
 
 const authModel = new AuthModel();
 const verifierModel = new VerifierModel();
@@ -320,69 +319,101 @@ class AuthService {
 		};
 	}
 
-	async sendVerifierPasswordOtp(email: string) {
-		const normalized = String(email || '').trim().toLowerCase();
-		if (!normalized || !normalized.includes('@')) {
-			throw httpError('Valid email is required', 400, 'EMAIL_REQUIRED');
+	async sendVerifierPasswordOtp(data: { clusterId: string; email: string }) {
+		const clusterId = String(data.clusterId || '').trim();
+		const email = String(data.email || '').trim().toLowerCase();
+
+		if (!clusterId) throw httpError('Cluster ID is required', 400, 'CLUSTER_REQUIRED');
+		if (!email || !email.includes('@')) throw httpError('Valid email is required', 400, 'EMAIL_REQUIRED');
+
+		const user = await verifierModel.findByUserName(clusterId);
+		if (!user?.clusterId) {
+			throw httpError('Verifier not found', 404, 'VERIFIER_NOT_FOUND');
 		}
 
-		const row = await verifierModel.findByEmail(normalized);
-		if (!row?.clusterId) {
-			throw httpError('No verifier found for this email', 404, 'VERIFIER_EMAIL_NOT_FOUND');
+		const emailOwner = await verifierModel.findEmailOwnerOtherThan(email, clusterId);
+		if (emailOwner) {
+			throw httpError('This email is already used for another profile', 409, 'EMAIL_ALREADY_USED');
 		}
 
 		const otp = generateSixDigitOtp();
-		saveVerifierOtp(normalized, String(row.clusterId), otp);
+		const userName = String(user.clusterId);
+		await verifierModel.saveOtp({ userName, email, otp });
+		await emailService.sendOtp(email, otp);
 
-		// No SMTP configured yet — log OTP for testing / ops
 		logger.info({
-			message: 'Verifier password reset OTP generated',
-			email: normalized,
-			clusterId: String(row.clusterId),
-			otp,
+			message: 'OTP Sent',
+			userName,
+			email,
 		});
 
 		return {
-			email: normalized,
+			userName,
+			email,
 			expiresInSeconds: 600,
-			// Dev aid when not production
 			...(config.environment !== 'production' ? { debugOtp: otp } : {}),
 		};
 	}
 
-	async verifyVerifierPasswordOtp(email: string, otp: string) {
-		const normalized = String(email || '').trim().toLowerCase();
-		const result = verifyStoredVerifierOtp(normalized, otp);
-		if (!result.ok) {
-			if (result.reason === 'expired') throw httpError('OTP has expired. Please request a new one.', 400, 'OTP_EXPIRED');
-			if (result.reason === 'locked') throw httpError('Too many invalid attempts. Request a new OTP.', 400, 'OTP_LOCKED');
-			if (result.reason === 'missing') throw httpError('Please send an OTP first.', 400, 'OTP_MISSING');
+	async verifyVerifierPasswordOtp(data: { clusterId: string; email: string; otp: string }) {
+		const clusterId = String(data.clusterId || '').trim();
+		const email = String(data.email || '').trim().toLowerCase();
+		const otp = String(data.otp || '').trim();
+
+		const user = await verifierModel.findByUserName(clusterId);
+		if (!user?.clusterId) {
+			throw httpError('Verifier not found', 404, 'VERIFIER_NOT_FOUND');
+		}
+
+		const emailOwner = await verifierModel.findEmailOwnerOtherThan(email, clusterId);
+		if (emailOwner) {
+			throw httpError('This email is already used for another profile', 409, 'EMAIL_ALREADY_USED');
+		}
+
+		const latest = await verifierModel.findLatestValidOtp(clusterId, email);
+		if (!latest) {
+			throw httpError('OTP has expired. Please request a new one.', 400, 'OTP_EXPIRED');
+		}
+		if (String(latest.otpCode) !== otp) {
 			throw httpError('Invalid OTP', 400, 'OTP_INVALID');
 		}
 
-		const resetToken = issuePasswordResetToken(normalized, result.clusterId);
+		await verifierModel.deleteOtpsForUser(clusterId, email);
+		await verifierModel.updateEmail(clusterId, email);
+
+		const resetToken = issuePasswordResetToken(email, clusterId);
 		return {
-			email: normalized,
+			clusterId,
+			email,
 			resetToken,
 			verified: true,
 		};
 	}
 
-	async resetVerifierPassword(resetToken: string, newPassword: string) {
-		const password = String(newPassword || '');
-		if (password.length < 6) {
+	async resetVerifierPassword(data: { resetToken: string; oldPassword: string; newPassword: string }) {
+		const oldPassword = String(data.oldPassword || '');
+		const newPassword = String(data.newPassword || '');
+		if (newPassword.length < 6) {
 			throw httpError('Password must be at least 6 characters', 400, 'PASSWORD_TOO_SHORT');
 		}
+		if (oldPassword === newPassword) {
+			throw httpError('New password must be different from old password', 400, 'PASSWORD_SAME');
+		}
 
-		const entry = consumePasswordResetToken(resetToken);
+		const entry = consumePasswordResetToken(data.resetToken);
 		if (!entry) {
 			throw httpError('Reset session expired. Please verify OTP again.', 400, 'RESET_TOKEN_INVALID');
 		}
 
-		const updated = await verifierModel.updatePassword(entry.clusterId, password);
-		if (!updated) {
+		const user = await verifierModel.findByClusterId(entry.clusterId);
+		if (!user) {
 			throw httpError('Verifier not found', 404, 'VERIFIER_NOT_FOUND');
 		}
+		if (String(user.password) !== oldPassword) {
+			throw httpError('Old password is incorrect', 401, 'OLD_PASSWORD_INVALID');
+		}
+
+		await verifierModel.updatePassword(entry.clusterId, newPassword);
 
 		return {
 			clusterId: entry.clusterId,

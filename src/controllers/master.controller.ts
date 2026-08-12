@@ -13,6 +13,7 @@ import {
 	GetSchoolsQuery,
 	GetSchoolStudentsParams,
 	GetSchoolReviewStatusQuery,
+	ExportDashboardBreakdownQuery,
 } from '../validations/master.validation';
 
 const masterService = new MasterService();
@@ -73,11 +74,72 @@ class MasterController {
 		try {
 			const { districtId, blockId, clusterId } = req.query;
 			const summary = await analyticsService.getSchoolReviewStatusSummary({
-				districtId,
+				districtId: districtId || null,
 				blockId: blockId || null,
 				clusterId: clusterId || null,
 			});
 			return res.handler.success(summary);
+		} catch (error) {
+			return next(error);
+		}
+	}
+
+	async getDashboardBreakdown(
+		req: Request<unknown, unknown, unknown, GetSchoolReviewStatusQuery>,
+		res: Response,
+		next: NextFunction,
+	) {
+		try {
+			const { districtId, blockId, clusterId } = req.query;
+			const data = await analyticsService.getGeoBreakdown({
+				districtId: districtId || null,
+				blockId: blockId || null,
+				clusterId: clusterId || null,
+			});
+			return res.handler.success(data);
+		} catch (error) {
+			return next(error);
+		}
+	}
+
+	async exportSchoolStudentSheet(
+		req: Request<unknown, unknown, unknown, GetSchoolReviewStatusQuery>,
+		res: Response,
+		next: NextFunction,
+	) {
+		try {
+			const { districtId, blockId, clusterId } = req.query;
+			const { filename, csv } = await analyticsService.buildSchoolStudentExportCsv({
+				districtId: districtId || null,
+				blockId: blockId || null,
+				clusterId: clusterId || null,
+			});
+			res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+			res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+			return res.status(200).send(csv);
+		} catch (error) {
+			return next(error);
+		}
+	}
+
+	async exportDashboardBreakdown(
+		req: Request<unknown, unknown, unknown, ExportDashboardBreakdownQuery>,
+		res: Response,
+		next: NextFunction,
+	) {
+		try {
+			const { districtId, blockId, clusterId, type } = req.query;
+			const { filename, csv } = await analyticsService.buildBreakdownExportCsv(
+				{
+					districtId: districtId || null,
+					blockId: blockId || null,
+					clusterId: clusterId || null,
+				},
+				type === 'student' ? 'student' : 'school',
+			);
+			res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+			res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+			return res.status(200).send(csv);
 		} catch (error) {
 			return next(error);
 		}

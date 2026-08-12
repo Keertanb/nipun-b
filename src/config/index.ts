@@ -60,6 +60,11 @@ const envSchema = z.object({
 		.default('30')
 		.transform((arg) => parseInt(arg, 10)),
 	CLOUDWATCH_REGION: z.string().default('ap-south-1'),
+
+	MAIL_HOST: z.string().default(''),
+	MAIL_PORT: z.string().default('587'),
+	MAIL_USER: z.string().default(''),
+	MAIL_PASSWORD: z.string().default(''),
 });
 
 const parseEnv = () => {
@@ -126,6 +131,12 @@ const config = {
 		logGroup: env.CLOUDWATCH_LOG_GROUP,
 		logStreamName: env.CLOUDWATCH_LOG_STREAM_NAME,
 		retentionInDays: env.CLOUDWATCH_RETENTION_DAYS,
+	},
+	mail: {
+		host: env.MAIL_HOST,
+		port: env.MAIL_PORT,
+		user: env.MAIL_USER,
+		password: env.MAIL_PASSWORD,
 	},
 };
 

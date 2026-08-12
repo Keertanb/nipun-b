@@ -20,13 +20,17 @@ const AUTH_ERROR_KEYS: Record<string, string> = {
 	VERIFIER_NOT_FOUND: 'auth.verifierNotFound',
 	VERIFIER_INVALID_CREDENTIALS: 'auth.verifierInvalidCredentials',
 	VERIFIER_EMAIL_NOT_FOUND: 'auth.verifierEmailNotFound',
+	EMAIL_ALREADY_USED: 'auth.emailAlreadyUsed',
 	OTP_EXPIRED: 'auth.otpExpired',
 	OTP_INVALID: 'auth.otpInvalid',
 	OTP_MISSING: 'auth.otpMissing',
 	OTP_LOCKED: 'auth.otpLocked',
 	RESET_TOKEN_INVALID: 'auth.resetTokenInvalid',
 	PASSWORD_TOO_SHORT: 'auth.passwordTooShort',
+	PASSWORD_SAME: 'auth.passwordSame',
+	OLD_PASSWORD_INVALID: 'auth.oldPasswordInvalid',
 	EMAIL_REQUIRED: 'auth.emailRequired',
+	MAIL_NOT_CONFIGURED: 'auth.mailNotConfigured',
 };
 
 function mapAuthError(error: unknown, t: Request['t']) {
@@ -67,7 +71,7 @@ class AuthController {
 
 	async sendVerifierOtp(req: Request<unknown, unknown, VerifierSendOtpRequest>, res: Response, next: NextFunction) {
 		try {
-			const data = await authService.sendVerifierPasswordOtp(req.body.email);
+			const data = await authService.sendVerifierPasswordOtp(req.body);
 			return res.handler.success(data, req.t('auth.otpSent'));
 		} catch (error) {
 			return next(mapAuthError(error, req.t));
@@ -76,7 +80,7 @@ class AuthController {
 
 	async verifyVerifierOtp(req: Request<unknown, unknown, VerifierVerifyOtpRequest>, res: Response, next: NextFunction) {
 		try {
-			const data = await authService.verifyVerifierPasswordOtp(req.body.email, req.body.otp);
+			const data = await authService.verifyVerifierPasswordOtp(req.body);
 			return res.handler.success(data, req.t('auth.otpVerified'));
 		} catch (error) {
 			return next(mapAuthError(error, req.t));
@@ -89,7 +93,7 @@ class AuthController {
 		next: NextFunction,
 	) {
 		try {
-			const data = await authService.resetVerifierPassword(req.body.resetToken, req.body.newPassword);
+			const data = await authService.resetVerifierPassword(req.body);
 			return res.handler.success(data, req.t('auth.passwordResetSuccessful'));
 		} catch (error) {
 			return next(mapAuthError(error, req.t));

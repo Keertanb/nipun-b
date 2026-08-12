@@ -30,6 +30,7 @@
 		"verifierNotFound": "વેરિફાયર મળ્યા નથી",
 		"verifierInvalidCredentials": "અમાન્ય ક્લસ્ટર આઈડી અથવા પાસવર્ડ",
 		"verifierEmailNotFound": "આ ઈમેલ માટે વેરિફાયર મળ્યા નથી",
+		"emailAlreadyUsed": "આ ઈમેલ પહેલેથી બીજી પ્રોફાઇલ માટે વપરાયેલ છે",
 		"otpSent": "ઓટીપી સફળતાપૂર્વક મોકલાયો",
 		"otpVerified": "ઓટીપી સફળતાપૂર્વક ચકાસાયો",
 		"otpExpired": "ઓટીપીની મુદત પૂરી થઈ. કૃપા કરીને નવો મંગાવો",
@@ -38,8 +39,11 @@
 		"otpLocked": "ઘણા અમાન્ય પ્રયાસો. નવો ઓટીપી મંગાવો",
 		"resetTokenInvalid": "રીસેટ સત્ર સમાપ્ત. કૃપા કરીને ઓટીપી ફરી ચકાસો",
 		"passwordTooShort": "પાસવર્ડ ઓછામાં ઓછા 6 અક્ષરનો હોવો જોઈએ",
+		"passwordSame": "નવો પાસવર્ડ જૂના પાસવર્ડથી અલગ હોવો જોઈએ",
+		"oldPasswordInvalid": "જૂનો પાસવર્ડ ખોટો છે",
 		"passwordResetSuccessful": "પાસવર્ડ સફળતાપૂર્વક અપડેટ થયો",
-		"emailRequired": "માન્ય ઈમેલ જરૂરી છે"
+		"emailRequired": "માન્ય ઈમેલ જરૂરી છે",
+		"mailNotConfigured": "ઈમેલ સેવા ગોઠવાયેલ નથી"
 	},
 	"teacher": {
 		"profileFetchedSuccessfully": "પ્રોફાઇલ સફળતાપૂર્વક મેળવી",

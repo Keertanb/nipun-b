@@ -30,6 +30,7 @@
 		"verifierNotFound": "Verifier not found",
 		"verifierInvalidCredentials": "Invalid cluster ID or password",
 		"verifierEmailNotFound": "No verifier found for this email",
+		"emailAlreadyUsed": "This email is already used for another profile",
 		"otpSent": "OTP sent successfully",
 		"otpVerified": "OTP verified successfully",
 		"otpExpired": "OTP has expired. Please request a new one",
@@ -38,8 +39,11 @@
 		"otpLocked": "Too many invalid attempts. Request a new OTP",
 		"resetTokenInvalid": "Reset session expired. Please verify OTP again",
 		"passwordTooShort": "Password must be at least 6 characters",
+		"passwordSame": "New password must be different from old password",
+		"oldPasswordInvalid": "Old password is incorrect",
 		"passwordResetSuccessful": "Password updated successfully",
-		"emailRequired": "Valid email is required"
+		"emailRequired": "Valid email is required",
+		"mailNotConfigured": "Email service is not configured"
 	},
 	"teacher": {
 		"profileFetchedSuccessfully": "Profile fetched successfully",

@@ -13,6 +13,7 @@ class MasterModel {
 					dm."districtId"::varchar AS id,
 					dm."districtName"::varchar AS name
 				FROM district_master dm
+				WHERE LOWER(TRIM(dm."districtName")) <> 'testdistrict'
 				ORDER BY dm."districtName"
 				`,
 				{ type: QueryTypes.SELECT },

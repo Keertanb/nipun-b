@@ -15,6 +15,21 @@ router.get(
 	validateZodSchema(masterValidation.getSchoolReviewStatus),
 	masterController.getSchoolReviewStatus,
 );
+router.get(
+	'/dashboard-breakdown',
+	validateZodSchema(masterValidation.getSchoolReviewStatus),
+	masterController.getDashboardBreakdown,
+);
+router.get(
+	'/dashboard-breakdown/export',
+	validateZodSchema(masterValidation.exportDashboardBreakdown),
+	masterController.exportDashboardBreakdown,
+);
+router.get(
+	'/school-review-status/export',
+	validateZodSchema(masterValidation.getSchoolReviewStatus),
+	masterController.exportSchoolStudentSheet,
+);
 router.get('/schools/:schoolId', masterController.getSchoolById);
 router.get('/schools/:schoolId/students', validateZodSchema(masterValidation.getSchoolStudents), masterController.getSchoolStudents);
 
