@@ -11,8 +11,36 @@ import {
 	getStaticStudentTotal,
 	EXPORT_CLASS_FIELDS,
 } from '../utils/schoolStudentCountStore';
+import { ensureSchoolProgressReady } from '../utils/schoolProgressSummary';
 
 const analyticsModel = new AnalyticsModel();
+
+type GeoBreakdownResult = {
+	groupLevel: GeoGroupLevel;
+	rows: GeoBreakdownRow[];
+	totals: Omit<
+		GeoBreakdownRow,
+		| 'districtId'
+		| 'districtName'
+		| 'blockId'
+		| 'blockName'
+		| 'clusterId'
+		| 'clusterName'
+		| 'schoolId'
+		| 'schoolName'
+	>;
+};
+
+const BREAKDOWN_CACHE_TTL_MS = 2 * 60 * 1000;
+const breakdownCache = new Map<string, { expiresAt: number; value: GeoBreakdownResult }>();
+
+function breakdownCacheKey(filters: SchoolReviewStatusFilters) {
+	return [
+		String(filters.districtId || ''),
+		String(filters.blockId || ''),
+		String(filters.clusterId || ''),
+	].join('|');
+}
 
 function csvEscape(value: string | number) {
 	const s = String(value ?? '');
@@ -61,6 +89,7 @@ class AnalyticsService {
 		filters: SchoolReviewStatusFilters,
 	): Promise<SchoolReviewStatusSummary> {
 		try {
+			await ensureSchoolProgressReady();
 			return await analyticsModel.getSchoolReviewStatusSummary(filters);
 		} catch (error) {
 			logger.error({
@@ -88,6 +117,14 @@ class AnalyticsService {
 		>;
 	}> {
 		try {
+			const cacheKey = breakdownCacheKey(filters);
+			const cached = breakdownCache.get(cacheKey);
+			if (cached && cached.expiresAt > Date.now()) {
+				return cached.value;
+			}
+
+			await ensureSchoolProgressReady();
+
 			const { groupLevel, rows: schoolRows } =
 				await analyticsModel.getGeoBreakdownSchoolRows(filters);
 
@@ -160,7 +197,12 @@ class AnalyticsService {
 				emptyMetrics(),
 			);
 
-			return { groupLevel, rows, totals };
+			const value = { groupLevel, rows, totals };
+			breakdownCache.set(cacheKey, {
+				expiresAt: Date.now() + BREAKDOWN_CACHE_TTL_MS,
+				value,
+			});
+			return value;
 		} catch (error) {
 			logger.error({
 				message: 'Error fetching geo breakdown',
@@ -177,6 +219,7 @@ class AnalyticsService {
 		rowCount: number;
 	}> {
 		const scope = resolveScope(filters);
+		await ensureSchoolProgressReady();
 		const rows: SchoolStudentExportRow[] = await analyticsModel.getSchoolStudentExportRows(filters);
 
 		const geoHeaders =

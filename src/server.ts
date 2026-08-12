@@ -12,6 +12,7 @@ import i18nMiddleware from './middlewares/i18n.middleware';
 import requestIdMiddleware from './middlewares/requestId.middleware';
 import errorHandler from './middlewares/errorHandler.middleware';
 import errorLogger from './middlewares/errorLogger.middleware';
+import { ensureSchoolProgressReady } from './utils/schoolProgressSummary';
 
 const app = express();
 const port = config.server.port;
@@ -90,6 +91,13 @@ const startServer = async () => {
 			logger.info(`Server started successfully on port ${port}`);
 			console.log('\x1b[32m%s\x1b[0m', 'Compiled Successfully!');
 			console.log(`\n Local:\t\t http://localhost:${port}`);
+			// Warm school progress summary in background (avoids 504 on dashboard-breakdown).
+			void ensureSchoolProgressReady().catch((err) => {
+				logger.error({
+					message: 'Failed to warm analytics_school_progress',
+					error: (err as Error).message,
+				});
+			});
 		});
 	} catch (error) {
 		console.error('Failed to start server:', error);
