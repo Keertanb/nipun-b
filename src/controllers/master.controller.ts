@@ -129,6 +129,21 @@ class MasterController {
 	) {
 		try {
 			const { districtId, blockId, clusterId, type } = req.query;
+			const hasFilter = Boolean(districtId || blockId || clusterId);
+
+			// Dedicated geo export, or unfiltered download → District / Block / Cluster workbook.
+			if (type === 'geo-school' || type === 'geo-student' || !hasFilter) {
+				const kind =
+					type === 'geo-student' || type === 'student' ? 'student' : 'school';
+				const { filename, buffer } = await analyticsService.buildFullBreakdownWorkbook(kind);
+				res.setHeader(
+					'Content-Type',
+					'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+				);
+				res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+				return res.status(200).send(buffer);
+			}
+
 			const { filename, csv } = await analyticsService.buildBreakdownExportCsv(
 				{
 					districtId: districtId || null,

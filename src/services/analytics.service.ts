@@ -34,8 +34,12 @@ type GeoBreakdownResult = {
 const BREAKDOWN_CACHE_TTL_MS = 2 * 60 * 1000;
 const breakdownCache = new Map<string, { expiresAt: number; value: GeoBreakdownResult }>();
 
+/** Bump when school eligibility filters change so stale rows are not served. */
+const BREAKDOWN_CACHE_VERSION = 'v4-pending-vs-enrollment';
+
 function breakdownCacheKey(filters: SchoolReviewStatusFilters) {
 	return [
+		BREAKDOWN_CACHE_VERSION,
 		String(filters.districtId || ''),
 		String(filters.blockId || ''),
 		String(filters.clusterId || ''),
@@ -84,6 +88,108 @@ function emptyMetrics() {
 	};
 }
 
+type SchoolProgressRow = {
+	districtId: string;
+	districtName: string;
+	blockId: string | null;
+	blockName: string | null;
+	clusterId: string | null;
+	clusterName: string | null;
+	schoolId: string;
+	schoolName: string;
+	schoolStatus: 'not_started' | 'partial' | 'completed';
+	studentsTouched: number;
+	studentsCompleted: number;
+	studentsPending: number;
+};
+
+function sortBreakdownRows(rows: GeoBreakdownRow[]) {
+	return rows.sort((a, b) => {
+		const d = a.districtName.localeCompare(b.districtName);
+		if (d) return d;
+		const bl = (a.blockName || '').localeCompare(b.blockName || '');
+		if (bl) return bl;
+		const c = (a.clusterName || '').localeCompare(b.clusterName || '');
+		if (c) return c;
+		return (a.schoolName || '').localeCompare(b.schoolName || '');
+	});
+}
+
+function classifySchoolStatus(school: SchoolProgressRow): 'not_started' | 'partial' | 'completed' {
+	const csvTotal = getStaticStudentTotal(school.schoolId);
+	const touched = school.studentsTouched || 0;
+	const completed = school.studentsCompleted || 0;
+	const pending = school.studentsPending || 0;
+
+	if (touched <= 0 && completed <= 0) return 'not_started';
+	// Fully done when every enrolled student (static sheet) finished both subjects.
+	if (csvTotal > 0 && completed >= csvTotal) return 'completed';
+	// No enrollment sheet row: treat as done when reviews exist and none are half-done.
+	if (csvTotal <= 0 && completed > 0 && pending === 0) return 'completed';
+	return 'partial';
+}
+
+function aggregateSchoolRows(
+	schoolRows: SchoolProgressRow[],
+	groupLevel: GeoGroupLevel,
+): GeoBreakdownRow[] {
+	const map = new Map<string, GeoBreakdownRow>();
+
+	for (const school of schoolRows) {
+		const csvTotal = getStaticStudentTotal(school.schoolId);
+		const studentsNotStarted = Math.max(0, csvTotal - school.studentsTouched);
+		const schoolStatus = classifySchoolStatus(school);
+		const key = groupKey(groupLevel, school);
+		let acc = map.get(key);
+		if (!acc) {
+			acc = {
+				districtId: school.districtId,
+				districtName: school.districtName,
+				blockId: groupLevel === 'district' ? null : school.blockId,
+				blockName: groupLevel === 'district' ? null : school.blockName,
+				clusterId:
+					groupLevel === 'district' || groupLevel === 'block' ? null : school.clusterId,
+				clusterName:
+					groupLevel === 'district' || groupLevel === 'block' ? null : school.clusterName,
+				schoolId: groupLevel === 'school' ? school.schoolId : null,
+				schoolName: groupLevel === 'school' ? school.schoolName : null,
+				...emptyMetrics(),
+			};
+			map.set(key, acc);
+		}
+
+		acc.totalSchools += 1;
+		if (school.studentsTouched > 0 || school.studentsCompleted > 0) acc.schoolsStarted += 1;
+		if (schoolStatus === 'partial') acc.schoolsPending += 1;
+		else if (schoolStatus === 'completed') acc.schoolsCompleted += 1;
+		else acc.schoolsNotStarted += 1;
+
+		acc.totalStudents += csvTotal;
+		acc.studentsCompleted += school.studentsCompleted;
+		acc.studentsPending += school.studentsPending;
+		acc.studentsNotStarted += studentsNotStarted;
+	}
+
+	return sortBreakdownRows(Array.from(map.values()));
+}
+
+function sumTotals(rows: GeoBreakdownRow[]) {
+	return rows.reduce(
+		(acc, row) => ({
+			totalSchools: acc.totalSchools + row.totalSchools,
+			schoolsStarted: acc.schoolsStarted + row.schoolsStarted,
+			schoolsPending: acc.schoolsPending + row.schoolsPending,
+			schoolsCompleted: acc.schoolsCompleted + row.schoolsCompleted,
+			schoolsNotStarted: acc.schoolsNotStarted + row.schoolsNotStarted,
+			totalStudents: acc.totalStudents + row.totalStudents,
+			studentsCompleted: acc.studentsCompleted + row.studentsCompleted,
+			studentsPending: acc.studentsPending + row.studentsPending,
+			studentsNotStarted: acc.studentsNotStarted + row.studentsNotStarted,
+		}),
+		emptyMetrics(),
+	);
+}
+
 class AnalyticsService {
 	async getSchoolReviewStatusSummary(
 		filters: SchoolReviewStatusFilters,
@@ -128,74 +234,8 @@ class AnalyticsService {
 			const { groupLevel, rows: schoolRows } =
 				await analyticsModel.getGeoBreakdownSchoolRows(filters);
 
-			type Acc = GeoBreakdownRow;
-			const map = new Map<string, Acc>();
-
-			for (const school of schoolRows) {
-				const csvTotal = getStaticStudentTotal(school.schoolId);
-				const studentsCompleted = school.studentsCompleted;
-				const studentsPending = school.studentsPending;
-				const studentsNotStarted = Math.max(0, csvTotal - school.studentsTouched);
-
-				const key = groupKey(groupLevel, school);
-				let acc = map.get(key);
-				if (!acc) {
-					acc = {
-						districtId: school.districtId,
-						districtName: school.districtName,
-						blockId: groupLevel === 'district' ? null : school.blockId,
-						blockName: groupLevel === 'district' ? null : school.blockName,
-						clusterId:
-							groupLevel === 'district' || groupLevel === 'block'
-								? null
-								: school.clusterId,
-						clusterName:
-							groupLevel === 'district' || groupLevel === 'block'
-								? null
-								: school.clusterName,
-						schoolId: groupLevel === 'school' ? school.schoolId : null,
-						schoolName: groupLevel === 'school' ? school.schoolName : null,
-						...emptyMetrics(),
-					};
-					map.set(key, acc);
-				}
-
-				acc.totalSchools += 1;
-				if (school.studentsTouched > 0) acc.schoolsStarted += 1;
-				if (school.schoolStatus === 'partial') acc.schoolsPending += 1;
-				else if (school.schoolStatus === 'completed') acc.schoolsCompleted += 1;
-				else acc.schoolsNotStarted += 1;
-
-				acc.totalStudents += csvTotal;
-				acc.studentsCompleted += studentsCompleted;
-				acc.studentsPending += studentsPending;
-				acc.studentsNotStarted += studentsNotStarted;
-			}
-
-			const rows = Array.from(map.values()).sort((a, b) => {
-				const d = a.districtName.localeCompare(b.districtName);
-				if (d) return d;
-				const bl = (a.blockName || '').localeCompare(b.blockName || '');
-				if (bl) return bl;
-				const c = (a.clusterName || '').localeCompare(b.clusterName || '');
-				if (c) return c;
-				return (a.schoolName || '').localeCompare(b.schoolName || '');
-			});
-
-			const totals = rows.reduce(
-				(acc, row) => ({
-					totalSchools: acc.totalSchools + row.totalSchools,
-					schoolsStarted: acc.schoolsStarted + row.schoolsStarted,
-					schoolsPending: acc.schoolsPending + row.schoolsPending,
-					schoolsCompleted: acc.schoolsCompleted + row.schoolsCompleted,
-					schoolsNotStarted: acc.schoolsNotStarted + row.schoolsNotStarted,
-					totalStudents: acc.totalStudents + row.totalStudents,
-					studentsCompleted: acc.studentsCompleted + row.studentsCompleted,
-					studentsPending: acc.studentsPending + row.studentsPending,
-					studentsNotStarted: acc.studentsNotStarted + row.studentsNotStarted,
-				}),
-				emptyMetrics(),
-			);
+			const rows = aggregateSchoolRows(schoolRows, groupLevel);
+			const totals = sumTotals(rows);
 
 			const value = { groupLevel, rows, totals };
 			breakdownCache.set(cacheKey, {
@@ -365,6 +405,128 @@ class AnalyticsService {
 		const idPart = filters.clusterId || filters.blockId || filters.districtId || 'all';
 		const filename = `${kind}-wise-${groupLevel}-${idPart}.csv`;
 		return { filename, csv: lines.join('\n'), rowCount: rows.length };
+	}
+
+	/**
+	 * Full Excel: District / Block / Cluster sheets for school or student metrics.
+	 */
+	async buildFullBreakdownWorkbook(
+		kind: 'school' | 'student' = 'school',
+	): Promise<{ filename: string; buffer: Buffer }> {
+		await ensureSchoolProgressReady();
+		const { rows: schoolRows } = await analyticsModel.getGeoBreakdownSchoolRows({});
+
+		const districtRows = aggregateSchoolRows(schoolRows, 'district');
+		const blockRows = aggregateSchoolRows(schoolRows, 'block');
+		const clusterRows = aggregateSchoolRows(schoolRows, 'cluster');
+
+		const ExcelJS = require('exceljs');
+		const workbook = new ExcelJS.Workbook();
+		workbook.creator = 'Nipun Gujarat';
+		workbook.created = new Date();
+
+		const schoolMetricColumns = [
+			{ header: 'total_schools', key: 'totalSchools', width: 14 },
+			{ header: 'schools_started', key: 'schoolsStarted', width: 14 },
+			{ header: 'schools_pending', key: 'schoolsPending', width: 14 },
+			{ header: 'schools_completed', key: 'schoolsCompleted', width: 16 },
+			{ header: 'schools_not_started', key: 'schoolsNotStarted', width: 16 },
+		];
+
+		const studentMetricColumns = [
+			{ header: 'total_students', key: 'totalStudents', width: 14 },
+			{ header: 'students_completed', key: 'studentsCompleted', width: 16 },
+			{ header: 'students_pending', key: 'studentsPending', width: 14 },
+			{ header: 'students_not_started', key: 'studentsNotStarted', width: 16 },
+		];
+
+		const metricColumns = kind === 'student' ? studentMetricColumns : schoolMetricColumns;
+
+		const districtSheet = workbook.addWorksheet('District');
+		districtSheet.columns = [
+			{ header: 'districtId', key: 'districtId', width: 12 },
+			{ header: 'districtName', key: 'districtName', width: 22 },
+			...metricColumns,
+		];
+
+		const blockSheet = workbook.addWorksheet('Block');
+		blockSheet.columns = [
+			{ header: 'districtId', key: 'districtId', width: 12 },
+			{ header: 'districtName', key: 'districtName', width: 18 },
+			{ header: 'blockId', key: 'blockId', width: 12 },
+			{ header: 'blockName', key: 'blockName', width: 22 },
+			...metricColumns,
+		];
+
+		const clusterSheet = workbook.addWorksheet('Cluster');
+		clusterSheet.columns = [
+			{ header: 'districtId', key: 'districtId', width: 12 },
+			{ header: 'districtName', key: 'districtName', width: 18 },
+			{ header: 'blockId', key: 'blockId', width: 12 },
+			{ header: 'blockName', key: 'blockName', width: 18 },
+			{ header: 'clusterId', key: 'clusterId', width: 14 },
+			{ header: 'clusterName', key: 'clusterName', width: 22 },
+			...metricColumns,
+		];
+
+		const metrics = (row: GeoBreakdownRow) =>
+			kind === 'student'
+				? {
+						totalStudents: row.totalStudents,
+						studentsCompleted: row.studentsCompleted,
+						studentsPending: Math.max(0, row.totalStudents - row.studentsCompleted),
+						studentsNotStarted: row.studentsNotStarted,
+					}
+				: {
+						totalSchools: row.totalSchools,
+						schoolsStarted: row.schoolsStarted,
+						schoolsPending: row.schoolsPending,
+						schoolsCompleted: row.schoolsCompleted,
+						schoolsNotStarted: row.schoolsNotStarted,
+					};
+
+		for (const row of districtRows) {
+			districtSheet.addRow({
+				districtId: row.districtId,
+				districtName: row.districtName,
+				...metrics(row),
+			});
+		}
+
+		for (const row of blockRows) {
+			blockSheet.addRow({
+				districtId: row.districtId,
+				districtName: row.districtName,
+				blockId: row.blockId || '',
+				blockName: row.blockName || '',
+				...metrics(row),
+			});
+		}
+
+		for (const row of clusterRows) {
+			clusterSheet.addRow({
+				districtId: row.districtId,
+				districtName: row.districtName,
+				blockId: row.blockId || '',
+				blockName: row.blockName || '',
+				clusterId: row.clusterId || '',
+				clusterName: row.clusterName || '',
+				...metrics(row),
+			});
+		}
+
+		districtSheet.getRow(1).font = { bold: true };
+		blockSheet.getRow(1).font = { bold: true };
+		clusterSheet.getRow(1).font = { bold: true };
+
+		const buffer = Buffer.from(await workbook.xlsx.writeBuffer());
+		return {
+			filename:
+				kind === 'student'
+					? 'dashboard-district-block-cluster-students.xlsx'
+					: 'dashboard-district-block-cluster-schools.xlsx',
+			buffer,
+		};
 	}
 }
 

@@ -2,6 +2,18 @@ import { QueryTypes } from 'sequelize';
 import sequelize from '../database';
 import logger from '../utils/logger';
 
+/** Active NIPUN schools: Balvatika / primary categories + allowed management. */
+const DASHBOARD_SCHOOL_FILTER = `
+	sm."isActive" = 1
+	AND (
+		sm."isBalvatika" = 1
+		OR sm."schoolCategoryId" IN (1, 2, 3, 6)
+	)
+	AND sm."schoolManagementId" IN (1, 2, 3, 6, 10, 12, 13, 14, 90)
+	AND sm."districtId"::varchar <> '2499'
+	AND LOWER(REPLACE(TRIM(COALESCE(sm."districtName", '')), ' ', '')) <> 'testdistrict'
+`.trim();
+
 export type SchoolReviewStatusFilters = {
 	districtId?: string | null;
 	blockId?: string | null;
@@ -99,20 +111,11 @@ class AnalyticsModel {
 						sm."districtId",
 						sm."blockId",
 						sm."clusterId",
-						NULLIF(
-							regexp_replace(COALESCE(sm."studentsEnrolledInCurrentYear", ''), '[^0-9]', '', 'g'),
-							''
-						)::int AS enrolled
+						COALESCE(ss.total_students, 0)::int AS enrolled
 					FROM school_master sm
-					WHERE sm."isActive" = 1
-						AND COALESCE(sm."isClosed", 0) = 0
-						AND sm."schoolManagementId" IN (1, 2, 3, 6, 10, 12, 13, 14, 90)
-						AND LOWER(TRIM(COALESCE(sm."districtName", ''))) <> 'testdistrict'
-				),
-				school_stage_completed AS (
-					SELECT DISTINCT tsp.school_id
-					FROM teacher_stage_progress tsp
-					WHERE tsp.status = 'completed'
+					LEFT JOIN school_static_student_count ss
+						ON ss.school_id = sm."schoolId"
+					WHERE ${DASHBOARD_SCHOOL_FILTER}
 				),
 				school_classified AS (
 					SELECT
@@ -123,21 +126,19 @@ class AnalyticsModel {
 						COALESCE(p.students_touched, 0) AS students_touched,
 						CASE
 							WHEN p.school_id IS NULL THEN 'not_started'
-							WHEN a.enrolled IS NOT NULL
-								AND a.enrolled > 0
+							WHEN a.enrolled > 0
 								AND COALESCE(p.students_completed, 0) >= a.enrolled
 								THEN 'completed'
-							WHEN a.enrolled IS NULL
-								AND sc.school_id IS NOT NULL
+							WHEN a.enrolled <= 0
 								AND COALESCE(p.students_completed, 0) > 0
+								AND COALESCE(p.students_pending, 0) = 0
 								THEN 'completed'
-							ELSE 'partial'
+							WHEN p.school_id IS NOT NULL THEN 'partial'
+							ELSE 'not_started'
 						END AS school_status
 					FROM active_schools a
 					LEFT JOIN analytics_school_progress p
 						ON p.school_id = a."schoolId"
-					LEFT JOIN school_stage_completed sc
-						ON sc.school_id = a."schoolId"
 					WHERE ${whereClause}
 				)
 				SELECT
@@ -239,10 +240,7 @@ class AnalyticsModel {
 				FROM school_master sm
 				LEFT JOIN analytics_school_progress p
 					ON p.school_id = sm."schoolId"
-				WHERE sm."isActive" = 1
-					AND COALESCE(sm."isClosed", 0) = 0
-					AND sm."schoolManagementId" IN (1, 2, 3, 6, 10, 12, 13, 14, 90)
-					AND LOWER(TRIM(COALESCE(sm."districtName", ''))) <> 'testdistrict'
+				WHERE ${DASHBOARD_SCHOOL_FILTER}
 					AND ${whereClause}
 				ORDER BY
 					sm."districtName",
@@ -309,12 +307,7 @@ class AnalyticsModel {
 						: 'district';
 
 			const bind: string[] = [];
-			const whereParts: string[] = [
-				`sm."isActive" = 1`,
-				`COALESCE(sm."isClosed", 0) = 0`,
-				`sm."schoolManagementId" IN (1, 2, 3, 6, 10, 12, 13, 14, 90)`,
-				`LOWER(TRIM(COALESCE(sm."districtName", ''))) <> 'testdistrict'`,
-			];
+			const whereParts: string[] = [DASHBOARD_SCHOOL_FILTER];
 			if (districtId) {
 				bind.push(districtId);
 				whereParts.push(`sm."districtId"::varchar = $${bind.length}`);
@@ -355,7 +348,10 @@ class AnalyticsModel {
 					COALESCE(sm."schoolName", '')::varchar AS school_name,
 					CASE
 						WHEN p.school_id IS NULL THEN 'not_started'
-						WHEN sc.school_id IS NOT NULL
+						WHEN COALESCE(ss.total_students, 0) > 0
+							AND COALESCE(p.students_completed, 0) >= COALESCE(ss.total_students, 0)
+							THEN 'completed'
+						WHEN COALESCE(ss.total_students, 0) <= 0
 							AND COALESCE(p.students_completed, 0) > 0
 							AND COALESCE(p.students_pending, 0) = 0
 							THEN 'completed'
@@ -368,12 +364,8 @@ class AnalyticsModel {
 				FROM school_master sm
 				LEFT JOIN analytics_school_progress p
 					ON p.school_id = sm."schoolId"
-				LEFT JOIN (
-					SELECT DISTINCT tsp.school_id
-					FROM teacher_stage_progress tsp
-					WHERE tsp.status = 'completed'
-				) sc
-					ON sc.school_id = sm."schoolId"
+				LEFT JOIN school_static_student_count ss
+					ON ss.school_id = sm."schoolId"
 				WHERE ${whereClause}
 				`,
 				{
