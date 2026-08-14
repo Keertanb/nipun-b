@@ -131,6 +131,16 @@ class MasterController {
 			const { districtId, blockId, clusterId, type } = req.query;
 			const hasFilter = Boolean(districtId || blockId || clusterId);
 
+			if (type === 'geo-review') {
+				const { filename, buffer } = await analyticsService.buildStudentReviewStatusWorkbook();
+				res.setHeader(
+					'Content-Type',
+					'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+				);
+				res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+				return res.status(200).send(buffer);
+			}
+
 			// Dedicated geo export, or unfiltered download → District / Block / Cluster workbook.
 			if (type === 'geo-school' || type === 'geo-student' || !hasFilter) {
 				const kind =

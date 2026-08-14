@@ -47,7 +47,7 @@ export const exportDashboardBreakdown = {
 		districtId: optionalId,
 		blockId: optionalId,
 		clusterId: optionalId,
-		type: z.enum(['school', 'student', 'geo-school', 'geo-student']).default('school'),
+		type: z.enum(['school', 'student', 'geo-school', 'geo-student', 'geo-review']).default('school'),
 	}),
 };
 

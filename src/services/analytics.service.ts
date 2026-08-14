@@ -5,6 +5,7 @@ import AnalyticsModel, {
 	SchoolReviewStatusFilters,
 	SchoolReviewStatusSummary,
 	SchoolStudentExportRow,
+	StudentReviewCategorySchoolRow,
 } from '../models/analytics.model';
 import {
 	getStaticSchoolStudentCounts,
@@ -188,6 +189,164 @@ function sumTotals(rows: GeoBreakdownRow[]) {
 		}),
 		emptyMetrics(),
 	);
+}
+
+type ReviewCategoryLevel = 'district' | 'block' | 'cluster' | 'school';
+
+type ReviewCategoryRow = {
+	districtId: string;
+	districtName: string;
+	blockId: string;
+	blockName: string;
+	clusterId: string;
+	clusterName: string;
+	schoolId: string;
+	schoolName: string;
+	totalStudents: number;
+	studentsReviewed: number;
+	gujUdayman: number;
+	gujPragatishil: number;
+	gujNipun: number;
+	mathsUdayman: number;
+	mathsPragatishil: number;
+	mathsNipun: number;
+};
+
+function emptyReviewCategory(): Omit<
+	ReviewCategoryRow,
+	| 'districtId'
+	| 'districtName'
+	| 'blockId'
+	| 'blockName'
+	| 'clusterId'
+	| 'clusterName'
+	| 'schoolId'
+	| 'schoolName'
+> {
+	return {
+		totalStudents: 0,
+		studentsReviewed: 0,
+		gujUdayman: 0,
+		gujPragatishil: 0,
+		gujNipun: 0,
+		mathsUdayman: 0,
+		mathsPragatishil: 0,
+		mathsNipun: 0,
+	};
+}
+
+function reviewCategoryKey(level: ReviewCategoryLevel, row: StudentReviewCategorySchoolRow) {
+	if (level === 'school') return row.schoolId;
+	if (level === 'cluster') return `${row.districtId}|${row.blockId}|${row.clusterId}`;
+	if (level === 'block') return `${row.districtId}|${row.blockId}`;
+	return row.districtId;
+}
+
+function aggregateReviewCategoryRows(
+	schoolRows: StudentReviewCategorySchoolRow[],
+	level: ReviewCategoryLevel,
+): ReviewCategoryRow[] {
+	const map = new Map<string, ReviewCategoryRow>();
+	for (const school of schoolRows) {
+		const key = reviewCategoryKey(level, school);
+		let acc = map.get(key);
+		if (!acc) {
+			acc = {
+				districtId: school.districtId,
+				districtName: school.districtName,
+				blockId: level === 'district' ? '' : school.blockId,
+				blockName: level === 'district' ? '' : school.blockName,
+				clusterId: level === 'district' || level === 'block' ? '' : school.clusterId,
+				clusterName: level === 'district' || level === 'block' ? '' : school.clusterName,
+				schoolId: level === 'school' ? school.schoolId : '',
+				schoolName: level === 'school' ? school.schoolName : '',
+				...emptyReviewCategory(),
+			};
+			map.set(key, acc);
+		}
+		acc.totalStudents += school.totalStudents;
+		acc.studentsReviewed += school.studentsReviewed;
+		acc.gujUdayman += school.gujUdayman;
+		acc.gujPragatishil += school.gujPragatishil;
+		acc.gujNipun += school.gujNipun;
+		acc.mathsUdayman += school.mathsUdayman;
+		acc.mathsPragatishil += school.mathsPragatishil;
+		acc.mathsNipun += school.mathsNipun;
+	}
+
+	return Array.from(map.values()).sort((a, b) => {
+		const d = a.districtName.localeCompare(b.districtName);
+		if (d) return d;
+		const bl = (a.blockName || '').localeCompare(b.blockName || '');
+		if (bl) return bl;
+		const c = (a.clusterName || '').localeCompare(b.clusterName || '');
+		if (c) return c;
+		return (a.schoolName || '').localeCompare(b.schoolName || '');
+	});
+}
+
+function emptyTotalReviewCategoryRow(): ReviewCategoryRow {
+	return {
+		districtId: '',
+		districtName: 'કુલ',
+		blockId: '',
+		blockName: '',
+		clusterId: '',
+		clusterName: '',
+		schoolId: '',
+		schoolName: '',
+		...emptyReviewCategory(),
+	};
+}
+
+function sumReviewCategoryRows(rows: ReviewCategoryRow[]): ReviewCategoryRow {
+	return rows.reduce(
+		(acc, row) => ({
+			...acc,
+			totalStudents: acc.totalStudents + row.totalStudents,
+			studentsReviewed: acc.studentsReviewed + row.studentsReviewed,
+			gujUdayman: acc.gujUdayman + row.gujUdayman,
+			gujPragatishil: acc.gujPragatishil + row.gujPragatishil,
+			gujNipun: acc.gujNipun + row.gujNipun,
+			mathsUdayman: acc.mathsUdayman + row.mathsUdayman,
+			mathsPragatishil: acc.mathsPragatishil + row.mathsPragatishil,
+			mathsNipun: acc.mathsNipun + row.mathsNipun,
+		}),
+		emptyTotalReviewCategoryRow(),
+	);
+}
+
+function formatReviewPct(part: number, total: number) {
+	if (!total) return '0.00%';
+	return `${((Number(part || 0) / total) * 100).toFixed(2)}%`;
+}
+
+function reviewCategoryExcelRow(row: ReviewCategoryRow, level: ReviewCategoryLevel) {
+	const reviewed = row.studentsReviewed;
+	return {
+		districtId: row.districtId,
+		districtName: row.districtName,
+		blockId: level === 'district' ? '' : row.blockId,
+		blockName: level === 'district' ? '' : row.blockName,
+		clusterId: level === 'district' || level === 'block' ? '' : row.clusterId,
+		clusterName: level === 'district' || level === 'block' ? '' : row.clusterName,
+		schoolId: level === 'school' ? row.schoolId : '',
+		schoolName: level === 'school' ? row.schoolName : '',
+		totalStudents: row.totalStudents,
+		studentsReviewed: row.studentsReviewed,
+		gujUdayman: row.gujUdayman,
+		gujUdaymanPct: formatReviewPct(row.gujUdayman, reviewed),
+		gujPragatishil: row.gujPragatishil,
+		gujPragatishilPct: formatReviewPct(row.gujPragatishil, reviewed),
+		gujNipun: row.gujNipun,
+		gujNipunPct: formatReviewPct(row.gujNipun, reviewed),
+		mathsUdayman: row.mathsUdayman,
+		mathsUdaymanPct: formatReviewPct(row.mathsUdayman, reviewed),
+		mathsPragatishil: row.mathsPragatishil,
+		mathsPragatishilPct: formatReviewPct(row.mathsPragatishil, reviewed),
+		mathsNipun: row.mathsNipun,
+		mathsNipunPct: formatReviewPct(row.mathsNipun, reviewed),
+	};
 }
 
 class AnalyticsService {
@@ -525,6 +684,115 @@ class AnalyticsService {
 				kind === 'student'
 					? 'dashboard-district-block-cluster-students.xlsx'
 					: 'dashboard-district-block-cluster-schools.xlsx',
+			buffer,
+		};
+	}
+
+	/**
+	 * Excel: District / Block / Cluster / School student review status
+	 * (ઉદયમાન / પ્રગતિશીલ / નિપુણ + % of reviewed students) with a total row.
+	 */
+	async buildStudentReviewStatusWorkbook(): Promise<{ filename: string; buffer: Buffer }> {
+		const schoolRows = await analyticsModel.getStudentReviewCategorySchoolRows();
+		const districtRows = aggregateReviewCategoryRows(schoolRows, 'district');
+		const blockRows = aggregateReviewCategoryRows(schoolRows, 'block');
+		const clusterRows = aggregateReviewCategoryRows(schoolRows, 'cluster');
+		const individualSchoolRows = aggregateReviewCategoryRows(schoolRows, 'school');
+
+		const ExcelJS = require('exceljs');
+		const workbook = new ExcelJS.Workbook();
+		workbook.creator = 'Nipun Gujarat';
+		workbook.created = new Date();
+
+		const metricColumns = [
+			{ header: 'કુલ વિદ્યાર્થીઓ', key: 'totalStudents', width: 16 },
+			{ header: 'સમીક્ષા થયેલ વિદ્યાર્થીઓ', key: 'studentsReviewed', width: 22 },
+			{ header: 'ગુજરાતી ઉદયમાન', key: 'gujUdayman', width: 18 },
+			{ header: 'ટકાવારી', key: 'gujUdaymanPct', width: 12 },
+			{ header: 'ગુજરાતી પ્રગતિશીલ', key: 'gujPragatishil', width: 18 },
+			{ header: 'ટકાવારી', key: 'gujPragatishilPct', width: 12 },
+			{ header: 'ગુજરાતી નિપુણ', key: 'gujNipun', width: 16 },
+			{ header: 'ટકાવારી', key: 'gujNipunPct', width: 12 },
+			{ header: 'ગણિત ઉદયમાન', key: 'mathsUdayman', width: 16 },
+			{ header: 'ટકાવારી', key: 'mathsUdaymanPct', width: 12 },
+			{ header: 'ગણિત પ્રગતિશીલ', key: 'mathsPragatishil', width: 16 },
+			{ header: 'ટકાવારી', key: 'mathsPragatishilPct', width: 12 },
+			{ header: 'ગણિત નિપુણ', key: 'mathsNipun', width: 14 },
+			{ header: 'ટકાવારી', key: 'mathsNipunPct', width: 12 },
+		];
+
+		const districtSheet = workbook.addWorksheet('District');
+		districtSheet.columns = [
+			{ header: 'જિલ્લો આઈડી', key: 'districtId', width: 14 },
+			{ header: 'જિલ્લો', key: 'districtName', width: 22 },
+			...metricColumns,
+		];
+
+		const blockSheet = workbook.addWorksheet('Block');
+		blockSheet.columns = [
+			{ header: 'જિલ્લો આઈડી', key: 'districtId', width: 14 },
+			{ header: 'જિલ્લો', key: 'districtName', width: 18 },
+			{ header: 'તાલુકો આઈડી', key: 'blockId', width: 14 },
+			{ header: 'તાલુકો', key: 'blockName', width: 22 },
+			...metricColumns,
+		];
+
+		const clusterSheet = workbook.addWorksheet('Cluster');
+		clusterSheet.columns = [
+			{ header: 'જિલ્લો આઈડી', key: 'districtId', width: 14 },
+			{ header: 'જિલ્લો', key: 'districtName', width: 18 },
+			{ header: 'તાલુકો આઈડી', key: 'blockId', width: 14 },
+			{ header: 'તાલુકો', key: 'blockName', width: 18 },
+			{ header: 'ક્લસ્ટર આઈડી', key: 'clusterId', width: 16 },
+			{ header: 'ક્લસ્ટર', key: 'clusterName', width: 22 },
+			...metricColumns,
+		];
+
+		const schoolSheet = workbook.addWorksheet('School');
+		schoolSheet.columns = [
+			{ header: 'જિલ્લો આઈડી', key: 'districtId', width: 14 },
+			{ header: 'જિલ્લો', key: 'districtName', width: 18 },
+			{ header: 'તાલુકો આઈડી', key: 'blockId', width: 14 },
+			{ header: 'તાલુકો', key: 'blockName', width: 18 },
+			{ header: 'ક્લસ્ટર આઈડી', key: 'clusterId', width: 16 },
+			{ header: 'ક્લસ્ટર', key: 'clusterName', width: 22 },
+			{ header: 'શાળા આઈડી', key: 'schoolId', width: 16 },
+			{ header: 'શાળા', key: 'schoolName', width: 32 },
+			...metricColumns,
+		];
+
+		const addRows = (sheet: any, rows: ReviewCategoryRow[], level: ReviewCategoryLevel) => {
+			for (const row of rows) {
+				sheet.addRow(reviewCategoryExcelRow(row, level));
+			}
+			const total = sumReviewCategoryRows(rows);
+			const totalRow = sheet.addRow({
+				...reviewCategoryExcelRow(total, level),
+				districtId: '',
+				districtName: 'કુલ',
+				blockId: '',
+				blockName: '',
+				clusterId: '',
+				clusterName: '',
+				schoolId: '',
+				schoolName: '',
+			});
+			totalRow.font = { bold: true };
+		};
+
+		addRows(districtSheet, districtRows, 'district');
+		addRows(blockSheet, blockRows, 'block');
+		addRows(clusterSheet, clusterRows, 'cluster');
+		addRows(schoolSheet, individualSchoolRows, 'school');
+
+		districtSheet.getRow(1).font = { bold: true };
+		blockSheet.getRow(1).font = { bold: true };
+		clusterSheet.getRow(1).font = { bold: true };
+		schoolSheet.getRow(1).font = { bold: true };
+
+		const buffer = Buffer.from(await workbook.xlsx.writeBuffer());
+		return {
+			filename: 'dashboard-student-review-status.xlsx',
 			buffer,
 		};
 	}

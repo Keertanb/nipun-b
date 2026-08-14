@@ -66,6 +66,25 @@ export type SchoolStudentExportRow = {
 	enrolled: number;
 };
 
+export type StudentReviewCategorySchoolRow = {
+	districtId: string;
+	districtName: string;
+	blockId: string;
+	blockName: string;
+	clusterId: string;
+	clusterName: string;
+	schoolId: string;
+	schoolName: string;
+	totalStudents: number;
+	studentsReviewed: number;
+	gujUdayman: number;
+	gujPragatishil: number;
+	gujNipun: number;
+	mathsUdayman: number;
+	mathsPragatishil: number;
+	mathsNipun: number;
+};
+
 class AnalyticsModel {
 	/**
 	 * Aggregate school review status for a district, optionally narrowed by block / cluster.
@@ -392,6 +411,139 @@ class AnalyticsModel {
 					studentsPending: toNum(r.students_pending),
 				})),
 			};
+		} catch (error) {
+			logger.error(error);
+			throw error;
+		}
+	}
+
+	/**
+	 * Per-school student review categories (latest Gujarati + Maths together).
+	 * Bad = ઉદયમાન, Average = પ્રગતિશીલ, Good = નિપુણ.
+	 */
+	async getStudentReviewCategorySchoolRows(): Promise<StudentReviewCategorySchoolRow[]> {
+		try {
+			const rows = await sequelize.transaction(async (transaction) => {
+				await sequelize.query(`SET LOCAL statement_timeout = '180000'`, { transaction });
+				return sequelize.query<{
+					district_id: string;
+					district_name: string;
+					block_id: string;
+					block_name: string;
+					cluster_id: string;
+					cluster_name: string;
+					school_id: string;
+					school_name: string;
+					total_students: string | number;
+					students_reviewed: string | number;
+					guj_udayman: string | number;
+					guj_pragatishil: string | number;
+					guj_nipun: string | number;
+					maths_udayman: string | number;
+					maths_pragatishil: string | number;
+					maths_nipun: string | number;
+				}>(
+				`
+				WITH eligible_schools AS (
+					SELECT
+						sm."schoolId"::varchar AS school_id,
+						COALESCE(sm."schoolName", '')::varchar AS school_name,
+						sm."districtId"::varchar AS district_id,
+						COALESCE(sm."districtName", '')::varchar AS district_name,
+						sm."blockId"::varchar AS block_id,
+						COALESCE(sm."blockName", '')::varchar AS block_name,
+						sm."clusterId"::varchar AS cluster_id,
+						COALESCE(sm."clusterName", '')::varchar AS cluster_name,
+						COALESCE(st.total_students, 0)::bigint AS total_students
+					FROM school_master sm
+					LEFT JOIN school_static_student_count st
+						ON st.school_id = sm."schoolId"
+					WHERE ${DASHBOARD_SCHOOL_FILTER}
+				),
+				latest_reviews AS (
+					SELECT DISTINCT ON (sr.student_id, sr.school_id, sr.subject)
+						sr.student_id,
+						sr.school_id,
+						sr.subject,
+						sr.review
+					FROM student_reviews sr
+					INNER JOIN eligible_schools e
+						ON e.school_id = sr.school_id
+					WHERE sr.subject IN ('Gujarati', 'Maths')
+					ORDER BY
+						sr.student_id,
+						sr.school_id,
+						sr.subject,
+						sr.reviewed_at DESC NULLS LAST,
+						sr.updated_at DESC NULLS LAST,
+						sr.id DESC
+				),
+				both_subjects AS (
+					SELECT
+						g.school_id,
+						g.review AS gujarati_review,
+						m.review AS maths_review
+					FROM latest_reviews g
+					INNER JOIN latest_reviews m
+						ON m.student_id = g.student_id
+						AND m.school_id = g.school_id
+						AND m.subject = 'Maths'
+					WHERE g.subject = 'Gujarati'
+				)
+				SELECT
+					e.district_id,
+					e.district_name,
+					e.block_id,
+					e.block_name,
+					e.cluster_id,
+					e.cluster_name,
+					e.school_id,
+					e.school_name,
+					e.total_students,
+					COUNT(b.school_id)::bigint AS students_reviewed,
+					COUNT(*) FILTER (WHERE b.gujarati_review = 'Bad')::bigint AS guj_udayman,
+					COUNT(*) FILTER (WHERE b.gujarati_review = 'Average')::bigint AS guj_pragatishil,
+					COUNT(*) FILTER (WHERE b.gujarati_review = 'Good')::bigint AS guj_nipun,
+					COUNT(*) FILTER (WHERE b.maths_review = 'Bad')::bigint AS maths_udayman,
+					COUNT(*) FILTER (WHERE b.maths_review = 'Average')::bigint AS maths_pragatishil,
+					COUNT(*) FILTER (WHERE b.maths_review = 'Good')::bigint AS maths_nipun
+				FROM eligible_schools e
+				LEFT JOIN both_subjects b
+					ON b.school_id = e.school_id
+				GROUP BY
+					e.school_id,
+					e.school_name,
+					e.district_id,
+					e.district_name,
+					e.block_id,
+					e.block_name,
+					e.cluster_id,
+					e.cluster_name,
+					e.total_students
+				`,
+					{ transaction, type: QueryTypes.SELECT },
+				);
+			});
+
+			const toNum = (v: string | number | null | undefined) => Number(v || 0);
+			return (rows || []).map((r) => ({
+				districtId: String(r.district_id || ''),
+				districtName: String(r.district_name || ''),
+				blockId: String(r.block_id || ''),
+				blockName: String(r.block_name || ''),
+				clusterId: String(r.cluster_id || ''),
+				clusterName: String(r.cluster_name || ''),
+				schoolId: String(r.school_id || ''),
+				schoolName: String(r.school_name || ''),
+				totalStudents: toNum(r.total_students),
+				studentsReviewed: toNum(r.students_reviewed),
+				gujUdayman: toNum(r.guj_udayman),
+				gujPragatishil: toNum(r.guj_pragatishil),
+				gujNipun: toNum(r.guj_nipun),
+				mathsUdayman: toNum(r.maths_udayman),
+				mathsPragatishil: toNum(r.maths_pragatishil),
+				mathsNipun: toNum(r.maths_nipun),
+			}));
 		} catch (error) {
 			logger.error(error);
 			throw error;
