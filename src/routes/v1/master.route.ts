@@ -30,6 +30,12 @@ router.get(
 	validateZodSchema(masterValidation.getSchoolReviewStatus),
 	masterController.exportSchoolStudentSheet,
 );
+router.get(
+	'/verifier-dashboard',
+	validateZodSchema(masterValidation.getSchoolReviewStatus),
+	masterController.getVerifierDashboard,
+);
+router.get('/verifier-dashboard/export', masterController.exportVerifierDashboard);
 router.get('/schools/:schoolId', masterController.getSchoolById);
 router.get('/schools/:schoolId/students', validateZodSchema(masterValidation.getSchoolStudents), masterController.getSchoolStudents);
 

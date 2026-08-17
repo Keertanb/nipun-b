@@ -66,6 +66,20 @@ export type SchoolStudentExportRow = {
 	enrolled: number;
 };
 
+export type VerifierClusterRow = {
+	districtId: string;
+	districtName: string;
+	blockId: string;
+	blockName: string;
+	clusterId: string;
+	clusterName: string;
+	schoolId: string;
+	schoolName: string;
+	clusterStatus: 'not_started' | 'pending' | 'completed';
+	studentsTouched: number;
+	studentsCompleted: number;
+};
+
 export type StudentReviewCategorySchoolRow = {
 	districtId: string;
 	districtName: string;
@@ -543,6 +557,128 @@ class AnalyticsModel {
 				mathsUdayman: toNum(r.maths_udayman),
 				mathsPragatishil: toNum(r.maths_pragatishil),
 				mathsNipun: toNum(r.maths_nipun),
+			}));
+		} catch (error) {
+			logger.error(error);
+			throw error;
+		}
+	}
+
+	/**
+	 * One row per external-verifier cluster (user_master), classified from
+	 * verifier reviews: min 2 fully reviewed students per allocated grade.
+	 */
+	async getVerifierClusterRows(): Promise<VerifierClusterRow[]> {
+		try {
+			const rows = await sequelize.transaction(async (transaction) => {
+				await sequelize.query(`SET LOCAL statement_timeout = '180000'`, { transaction });
+				return sequelize.query<{
+					district_id: string;
+					district_name: string;
+					block_id: string;
+					block_name: string;
+					cluster_id: string;
+					cluster_name: string;
+					school_id: string;
+					school_name: string;
+					cluster_status: 'not_started' | 'pending' | 'completed';
+					students_touched: string | number;
+					students_completed: string | number;
+				}>(
+					`
+					WITH clusters AS (
+						SELECT
+							um.clusterid::varchar AS cluster_id,
+							COALESCE(um.clustername, sm."clusterName", '')::varchar AS cluster_name,
+							sm."districtId"::varchar AS district_id,
+							COALESCE(sm."districtName", um.districtname, '')::varchar AS district_name,
+							sm."blockId"::varchar AS block_id,
+							COALESCE(sm."blockName", um.blockname, '')::varchar AS block_name,
+							um.schoolid::varchar AS school_id,
+							COALESCE(sm."schoolName", um.schoolname, '')::varchar AS school_name,
+							COALESCE(um.balvatikacount, 0) AS balvatika,
+							COALESCE(um.class1count, 0) AS class_1,
+							COALESCE(um.class2count, 0) AS class_2,
+							COALESCE(um.class3count, 0) AS class_3,
+							COALESCE(um.class4count, 0) AS class_4,
+							COALESCE(um.class5count, 0) AS class_5
+						FROM user_master um
+						INNER JOIN school_master sm
+							ON sm."schoolId" = um.schoolid
+						WHERE ${DASHBOARD_SCHOOL_FILTER}
+					),
+					student_status AS (
+						SELECT
+							sr.school_id,
+							sr.student_id,
+							MAX(sr.grade) AS grade,
+							COUNT(DISTINCT sr.subject) FILTER (
+								WHERE sr.subject IN ('Gujarati', 'Maths')
+							) AS subjects_done
+						FROM student_reviews sr
+						INNER JOIN clusters c
+							ON c.school_id = sr.school_id
+						WHERE COALESCE(sr.reviewer_role, '') = 'verifier'
+						GROUP BY sr.school_id, sr.student_id
+					)
+					SELECT
+						c.district_id,
+						c.district_name,
+						c.block_id,
+						c.block_name,
+						c.cluster_id,
+						c.cluster_name,
+						c.school_id,
+						c.school_name,
+						COUNT(ss.student_id)::bigint AS students_touched,
+						COUNT(*) FILTER (WHERE ss.subjects_done >= 2)::bigint AS students_completed,
+						CASE
+							WHEN COUNT(ss.student_id) = 0 THEN 'not_started'
+							WHEN (c.balvatika = 0 OR COUNT(*) FILTER (WHERE ss.subjects_done >= 2 AND ss.grade IN ('B', '-1')) >= 2)
+								AND (c.class_1 = 0 OR COUNT(*) FILTER (WHERE ss.subjects_done >= 2 AND ss.grade IN ('1')) >= 2)
+								AND (c.class_2 = 0 OR COUNT(*) FILTER (WHERE ss.subjects_done >= 2 AND ss.grade IN ('2')) >= 2)
+								AND (c.class_3 = 0 OR COUNT(*) FILTER (WHERE ss.subjects_done >= 2 AND ss.grade IN ('3')) >= 2)
+								AND (c.class_4 = 0 OR COUNT(*) FILTER (WHERE ss.subjects_done >= 2 AND ss.grade IN ('4')) >= 2)
+								AND (c.class_5 = 0 OR COUNT(*) FILTER (WHERE ss.subjects_done >= 2 AND ss.grade IN ('5')) >= 2)
+								THEN 'completed'
+							ELSE 'pending'
+						END AS cluster_status
+					FROM clusters c
+					LEFT JOIN student_status ss
+						ON ss.school_id = c.school_id
+					GROUP BY
+						c.district_id,
+						c.district_name,
+						c.block_id,
+						c.block_name,
+						c.cluster_id,
+						c.cluster_name,
+						c.school_id,
+						c.school_name,
+						c.balvatika,
+						c.class_1,
+						c.class_2,
+						c.class_3,
+						c.class_4,
+						c.class_5
+					`,
+					{ transaction, type: QueryTypes.SELECT },
+				);
+			});
+
+			const toNum = (v: string | number | null | undefined) => Number(v || 0);
+			return (rows || []).map((r) => ({
+				districtId: String(r.district_id || ''),
+				districtName: String(r.district_name || ''),
+				blockId: String(r.block_id || ''),
+				blockName: String(r.block_name || ''),
+				clusterId: String(r.cluster_id || ''),
+				clusterName: String(r.cluster_name || ''),
+				schoolId: String(r.school_id || ''),
+				schoolName: String(r.school_name || ''),
+				clusterStatus: r.cluster_status || 'not_started',
+				studentsTouched: toNum(r.students_touched),
+				studentsCompleted: toNum(r.students_completed),
 			}));
 		} catch (error) {
 			logger.error(error);

@@ -170,6 +170,38 @@ class MasterController {
 		}
 	}
 
+	async getVerifierDashboard(
+		req: Request<unknown, unknown, unknown, GetSchoolReviewStatusQuery>,
+		res: Response,
+		next: NextFunction,
+	) {
+		try {
+			const { districtId, blockId, clusterId } = req.query;
+			const data = await analyticsService.getVerifierDashboard({
+				districtId: districtId || null,
+				blockId: blockId || null,
+				clusterId: clusterId || null,
+			});
+			return res.handler.success(data);
+		} catch (error) {
+			return next(error);
+		}
+	}
+
+	async exportVerifierDashboard(_req: Request, res: Response, next: NextFunction) {
+		try {
+			const { filename, buffer } = await analyticsService.buildVerifierStatusWorkbook();
+			res.setHeader(
+				'Content-Type',
+				'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+			);
+			res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+			return res.status(200).send(buffer);
+		} catch (error) {
+			return next(error);
+		}
+	}
+
 	async getSchoolById(req: Request<{ schoolId: string }>, res: Response, next: NextFunction) {
 		try {
 			const { schoolId } = req.params;

@@ -6,6 +6,7 @@ import AnalyticsModel, {
 	SchoolReviewStatusSummary,
 	SchoolStudentExportRow,
 	StudentReviewCategorySchoolRow,
+	VerifierClusterRow,
 } from '../models/analytics.model';
 import {
 	getStaticSchoolStudentCounts,
@@ -32,8 +33,141 @@ type GeoBreakdownResult = {
 	>;
 };
 
+type VerifierGroupLevel = 'district' | 'block' | 'cluster';
+
+type VerifierAggRow = {
+	districtId: string;
+	districtName: string;
+	blockId: string;
+	blockName: string;
+	clusterId: string;
+	clusterName: string;
+	schoolId: string;
+	schoolName: string;
+	status: string;
+	totalClusters: number;
+	clustersStarted: number;
+	clustersPending: number;
+	clustersCompleted: number;
+	clustersNotStarted: number;
+};
+
+type VerifierDashboardResult = {
+	groupLevel: GeoGroupLevel;
+ 	rows: Array<{
+		districtId: string;
+		districtName: string;
+		blockId: string | null;
+		blockName: string | null;
+		clusterId: string | null;
+		clusterName: string | null;
+		schoolId: string | null;
+		schoolName: string | null;
+		totalClusters: number;
+		clustersStarted: number;
+		clustersPending: number;
+		clustersCompleted: number;
+		clustersNotStarted: number;
+	}>;
+	totals: {
+		totalClusters: number;
+		clustersStarted: number;
+		clustersPending: number;
+		clustersCompleted: number;
+		clustersNotStarted: number;
+	};
+};
+
+async function getCachedVerifierClusterRows(): Promise<VerifierClusterRow[]> {
+	if (verifierClusterCache && verifierClusterCache.expiresAt > Date.now()) {
+		return verifierClusterCache.rows;
+	}
+	const rows = await analyticsModel.getVerifierClusterRows();
+	verifierClusterCache = {
+		expiresAt: Date.now() + BREAKDOWN_CACHE_TTL_MS,
+		rows,
+	};
+	return rows;
+}
+
+function emptyVerifierMetrics() {
+	return {
+		totalClusters: 0,
+		clustersStarted: 0,
+		clustersPending: 0,
+		clustersCompleted: 0,
+		clustersNotStarted: 0,
+	};
+}
+
+function verifierGroupKey(level: VerifierGroupLevel, row: VerifierClusterRow) {
+	if (level === 'cluster') return row.clusterId;
+	if (level === 'block') return `${row.districtId}|${row.blockId}`;
+	return row.districtId;
+}
+
+function aggregateVerifierClusterRows(
+	clusterRows: VerifierClusterRow[],
+	level: VerifierGroupLevel,
+): VerifierAggRow[] {
+	const map = new Map<string, VerifierAggRow>();
+	for (const cluster of clusterRows) {
+		const key = verifierGroupKey(level, cluster);
+		let acc = map.get(key);
+		if (!acc) {
+			acc = {
+				districtId: cluster.districtId,
+				districtName: cluster.districtName,
+				blockId: level === 'district' ? '' : cluster.blockId,
+				blockName: level === 'district' ? '' : cluster.blockName,
+				clusterId: level === 'cluster' ? cluster.clusterId : '',
+				clusterName: level === 'cluster' ? cluster.clusterName : '',
+				schoolId: level === 'cluster' ? cluster.schoolId : '',
+				schoolName: level === 'cluster' ? cluster.schoolName : '',
+				status: level === 'cluster' ? cluster.clusterStatus : '',
+				...emptyVerifierMetrics(),
+			};
+			map.set(key, acc);
+		}
+		acc.totalClusters += 1;
+		if (cluster.clusterStatus === 'pending') acc.clustersPending += 1;
+		else if (cluster.clusterStatus === 'completed') acc.clustersCompleted += 1;
+		else acc.clustersNotStarted += 1;
+	}
+
+	for (const acc of map.values()) {
+		acc.clustersStarted = acc.clustersPending + acc.clustersCompleted;
+	}
+
+	return Array.from(map.values()).sort((a, b) => {
+		const d = a.districtName.localeCompare(b.districtName);
+		if (d) return d;
+		const bl = (a.blockName || '').localeCompare(b.blockName || '');
+		if (bl) return bl;
+		return (a.clusterName || '').localeCompare(b.clusterName || '');
+	});
+}
+
+function sumVerifierTotals(rows: VerifierAggRow[]) {
+	return rows.reduce(
+		(acc, row) => ({
+			totalClusters: acc.totalClusters + row.totalClusters,
+			clustersStarted: acc.clustersStarted + row.clustersStarted,
+			clustersPending: acc.clustersPending + row.clustersPending,
+			clustersCompleted: acc.clustersCompleted + row.clustersCompleted,
+			clustersNotStarted: acc.clustersNotStarted + row.clustersNotStarted,
+		}),
+		emptyVerifierMetrics(),
+	);
+}
+
 const BREAKDOWN_CACHE_TTL_MS = 2 * 60 * 1000;
 const breakdownCache = new Map<string, { expiresAt: number; value: GeoBreakdownResult }>();
+const verifierDashboardCache = new Map<
+	string,
+	{ expiresAt: number; value: VerifierDashboardResult }
+>();
+let verifierClusterCache: { expiresAt: number; rows: VerifierClusterRow[] } | null = null;
 
 /** Bump when school eligibility filters change so stale rows are not served. */
 const BREAKDOWN_CACHE_VERSION = 'v4-pending-vs-enrollment';
@@ -793,6 +927,184 @@ class AnalyticsService {
 		const buffer = Buffer.from(await workbook.xlsx.writeBuffer());
 		return {
 			filename: 'dashboard-student-review-status.xlsx',
+			buffer,
+		};
+	}
+
+	async getVerifierDashboard(filters: SchoolReviewStatusFilters): Promise<{
+		groupLevel: GeoGroupLevel;
+		rows: Array<{
+			districtId: string;
+			districtName: string;
+			blockId: string | null;
+			blockName: string | null;
+			clusterId: string | null;
+			clusterName: string | null;
+			schoolId: string | null;
+			schoolName: string | null;
+			totalClusters: number;
+			clustersStarted: number;
+			clustersPending: number;
+			clustersCompleted: number;
+			clustersNotStarted: number;
+		}>;
+		totals: {
+			totalClusters: number;
+			clustersStarted: number;
+			clustersPending: number;
+			clustersCompleted: number;
+			clustersNotStarted: number;
+		};
+	}> {
+		try {
+			const cacheKey = `verifier|${breakdownCacheKey(filters)}`;
+			const cached = verifierDashboardCache.get(cacheKey);
+			if (cached && cached.expiresAt > Date.now()) {
+				return cached.value;
+			}
+
+			const allRows = await getCachedVerifierClusterRows();
+			const districtId = String(filters.districtId || '').trim();
+			const blockId = String(filters.blockId || '').trim();
+			const clusterId = String(filters.clusterId || '').trim();
+
+			const filtered = allRows.filter((row) => {
+				if (districtId && row.districtId !== districtId) return false;
+				if (blockId && row.blockId !== blockId) return false;
+				if (clusterId && row.clusterId !== clusterId) return false;
+				return true;
+			});
+
+			const groupLevel: GeoGroupLevel = clusterId
+				? 'cluster'
+				: blockId
+					? 'cluster'
+					: districtId
+						? 'block'
+						: 'district';
+
+			const rows = aggregateVerifierClusterRows(filtered, groupLevel);
+			const totals = sumVerifierTotals(rows);
+			const value = { groupLevel, rows, totals };
+			verifierDashboardCache.set(cacheKey, {
+				expiresAt: Date.now() + BREAKDOWN_CACHE_TTL_MS,
+				value,
+			});
+			return value;
+		} catch (error) {
+			logger.error({
+				message: 'Error fetching verifier dashboard',
+				error: (error as Error).message,
+				filters,
+			});
+			throw error;
+		}
+	}
+
+	async buildVerifierStatusWorkbook(): Promise<{ filename: string; buffer: Buffer }> {
+		const allRows = await getCachedVerifierClusterRows();
+		const districtRows = aggregateVerifierClusterRows(allRows, 'district');
+		const blockRows = aggregateVerifierClusterRows(allRows, 'block');
+		const clusterRows = aggregateVerifierClusterRows(allRows, 'cluster');
+
+		const ExcelJS = require('exceljs');
+		const workbook = new ExcelJS.Workbook();
+		workbook.creator = 'Nipun Gujarat';
+		workbook.created = new Date();
+
+		const metricColumns = [
+			{ header: 'total_clusters', key: 'totalClusters', width: 16 },
+			{ header: 'clusters_started', key: 'clustersStarted', width: 16 },
+			{ header: 'clusters_pending', key: 'clustersPending', width: 16 },
+			{ header: 'clusters_completed', key: 'clustersCompleted', width: 18 },
+			{ header: 'clusters_not_started', key: 'clustersNotStarted', width: 18 },
+		];
+
+		const districtSheet = workbook.addWorksheet('District');
+		districtSheet.columns = [
+			{ header: 'districtId', key: 'districtId', width: 12 },
+			{ header: 'districtName', key: 'districtName', width: 22 },
+			...metricColumns,
+		];
+
+		const blockSheet = workbook.addWorksheet('Block');
+		blockSheet.columns = [
+			{ header: 'districtId', key: 'districtId', width: 12 },
+			{ header: 'districtName', key: 'districtName', width: 18 },
+			{ header: 'blockId', key: 'blockId', width: 12 },
+			{ header: 'blockName', key: 'blockName', width: 22 },
+			...metricColumns,
+		];
+
+		const clusterSheet = workbook.addWorksheet('Cluster');
+		clusterSheet.columns = [
+			{ header: 'districtId', key: 'districtId', width: 12 },
+			{ header: 'districtName', key: 'districtName', width: 18 },
+			{ header: 'blockId', key: 'blockId', width: 12 },
+			{ header: 'blockName', key: 'blockName', width: 18 },
+			{ header: 'clusterId', key: 'clusterId', width: 14 },
+			{ header: 'clusterName', key: 'clusterName', width: 22 },
+			{ header: 'schoolId', key: 'schoolId', width: 14 },
+			{ header: 'schoolName', key: 'schoolName', width: 28 },
+			{ header: 'status', key: 'status', width: 14 },
+			...metricColumns,
+		];
+
+		const pushRows = (
+			sheet: any,
+			rows: VerifierAggRow[],
+			level: VerifierGroupLevel,
+			withStatus = false,
+		) => {
+			for (const row of rows) {
+				sheet.addRow({
+					districtId: row.districtId,
+					districtName: row.districtName,
+					blockId: level === 'district' ? '' : row.blockId,
+					blockName: level === 'district' ? '' : row.blockName,
+					clusterId: level === 'cluster' ? row.clusterId : '',
+					clusterName: level === 'cluster' ? row.clusterName : '',
+					schoolId: level === 'cluster' ? row.schoolId : '',
+					schoolName: level === 'cluster' ? row.schoolName : '',
+					status: withStatus ? row.status : '',
+					totalClusters: row.totalClusters,
+					clustersStarted: row.clustersStarted,
+					clustersPending: row.clustersPending,
+					clustersCompleted: row.clustersCompleted,
+					clustersNotStarted: row.clustersNotStarted,
+				});
+			}
+			const total = sumVerifierTotals(rows);
+			const totalRow = sheet.addRow({
+				districtId: '',
+				districtName: 'Total',
+				blockId: '',
+				blockName: '',
+				clusterId: '',
+				clusterName: '',
+				schoolId: '',
+				schoolName: '',
+				status: '',
+				totalClusters: total.totalClusters,
+				clustersStarted: total.clustersStarted,
+				clustersPending: total.clustersPending,
+				clustersCompleted: total.clustersCompleted,
+				clustersNotStarted: total.clustersNotStarted,
+			});
+			totalRow.font = { bold: true };
+		};
+
+		pushRows(districtSheet, districtRows, 'district');
+		pushRows(blockSheet, blockRows, 'block');
+		pushRows(clusterSheet, clusterRows, 'cluster', true);
+
+		districtSheet.getRow(1).font = { bold: true };
+		blockSheet.getRow(1).font = { bold: true };
+		clusterSheet.getRow(1).font = { bold: true };
+
+		const buffer = Buffer.from(await workbook.xlsx.writeBuffer());
+		return {
+			filename: 'dashboard-verifier-cluster-status.xlsx',
 			buffer,
 		};
 	}
